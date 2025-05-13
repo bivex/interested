@@ -29,9 +29,10 @@ echo 3. Download and install Ubuntu for WSL
 echo 4. Download Docker Desktop installer
 echo 5. Enable required Windows features
 echo 6. Check current status
-echo 7. Exit
+echo 7. VMware Pro vs Player for development
+echo 8. Exit
 echo.
-set /p choice=Select action (1-7): 
+set /p choice=Select action (1-8): 
 
 if "%choice%"=="1" goto check_virt
 if "%choice%"=="2" goto install_wsl2
@@ -39,7 +40,8 @@ if "%choice%"=="3" goto install_ubuntu
 if "%choice%"=="4" goto download_docker
 if "%choice%"=="5" goto enable_features
 if "%choice%"=="6" goto check_status
-if "%choice%"=="7" goto end
+if "%choice%"=="7" goto vmware_compare
+if "%choice%"=="8" goto end
 goto menu
 
 :check_virt
@@ -203,6 +205,61 @@ if %errorlevel% equ 0 (
 ) else (
     echo Docker service is not found or not running.
 )
+echo.
+pause
+goto menu
+
+:vmware_compare
+cls
+echo ============================================================
+echo   VMware Workstation Pro vs Player for Development
+echo ============================================================
+echo.
+echo For development purposes, here's a comparison between
+echo VMware Workstation 17.5.1 Pro and VMware Workstation 17.5.1 Player:
+echo.
+echo VMware Workstation Pro advantages for developers:
+echo.
+echo 1. Snapshots - Create multiple save points to test different
+echo    configurations without risking your development environment
+echo.
+echo 2. Cloning - Quickly create linked or full clones of VMs for
+echo    parallel development environments or testing
+echo.
+echo 3. Multiple tabs - Run several VMs simultaneously with easy
+echo    tab-based switching between environments
+echo.
+echo 4. Advanced networking - Create custom virtual networks for
+echo    complex development/testing scenarios
+echo.
+echo 5. Team development features - Share VMs with team members and
+echo    access them remotely
+echo.
+echo 6. Resource control - Fine-tune CPU, memory, and disk allocation
+echo    for optimal development performance
+echo.
+echo 7. VM encryption and restrictions - Secure development environments
+echo    and intellectual property
+echo.
+echo VMware Workstation Player limitations:
+echo.
+echo 1. No snapshots - Can't create recovery points during development
+echo 2. No cloning - Manual copy required for duplicate environments
+echo 3. Limited networking options - Basic NAT and bridged only
+echo 4. Single VM interface - No tabbed interface for multiple VMs
+echo 5. No VM sharing - Limited team collaboration features 
+echo.
+echo Recommendation:
+echo.
+echo * For professional development: VMware Workstation Pro provides
+echo   essential features for efficient development workflows
+echo.
+echo * For casual or learning purposes: VMware Player may be
+echo   sufficient if advanced features aren't required
+echo.
+echo Workstation Pro is worth the investment for serious development
+echo work where productivity, flexibility and team collaboration
+echo are important.
 echo.
 pause
 goto menu
