@@ -14,3 +14,4 @@
 7. VPSDeals
 
 8. VPSRank
+https://lowend-deals.xbit.win/
