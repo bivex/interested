@@ -1,1 +1,1 @@
-[![Powered by 🔥 Curiosity](https://a.b-b.top/badge.svg?repo=interested&label=Powered%20by%20🔥%20Curiosity&background_color=ff5722&background_color2=ff7043&utm_source=github&utm_medium=readme&utm_campaign=badge)](https://a.b-b.top)
+[![Powered by 🔥 Curiosity](https://a.b-b.top/badge.png?repo=interested&label=Powered%20by%20🔥%20Curiosity&background_color=ff5722&background_color2=ff7043&utm_source=github&utm_medium=readme&utm_campaign=badge)](https://a.b-b.top)
