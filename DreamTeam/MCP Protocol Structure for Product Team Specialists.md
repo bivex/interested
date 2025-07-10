@@ -86,8 +86,8 @@ Each specialist role should expose their core functions as MCP tools with standa
   "inputSchema": {
     "type": "object",
     "properties": {
-      "from_role": {"type": "string", "enum": ["product_manager", "designer", "developer", "qa", "marketing"]},
-      "to_role": {"type": "string", "enum": ["product_manager", "designer", "developer", "qa", "marketing"]},
+      "from_role": {"type": "string", "enum": ["product_manager", "designer", "developer", "qa", "marketing", "company_lawyer"]},
+      "to_role": {"type": "string", "enum": ["product_manager", "designer", "developer", "qa", "marketing", "company_lawyer"]},
       "artifact_type": {"type": "string", "enum": ["requirement", "design", "code", "test_case", "documentation"]},
       "artifact_id": {"type": "string"},
       "context": {"type": "object"},
@@ -124,7 +124,7 @@ Each specialist role should expose their core functions as MCP tools with standa
           "type": "object",
           "properties": {
             "description": {"type": "string"},
-            "blocking_role": {"type": "string"},
+            "blocking_role": {"type": "string", "enum": ["product_manager", "designer", "developer", "qa", "marketing", "company_lawyer"]},
             "severity": {"type": "string", "enum": ["low", "medium", "high", "critical"]},
             "estimated_resolution": {"type": "string", "format": "date-time"}
           }
@@ -218,7 +218,7 @@ Each specialist role should expose their core functions as MCP tools with standa
     "properties": {
       "knowledge_type": {"type": "string", "enum": ["lesson_learned", "best_practice", "technical_doc", "process_improvement"]},
       "content": {"type": "string"},
-      "relevant_roles": {"type": "array", "items": {"type": "string"}},
+      "relevant_roles": {"type": "array", "items": {"type": "string", "enum": ["product_manager", "designer", "developer", "qa", "marketing", "data_analyst", "growth_manager", "business_analyst", "customer_success_manager", "company_lawyer"]}},
       "tags": {"type": "array", "items": {"type": "string"}},
       "visibility": {"type": "string", "enum": ["team", "department", "company"]},
       "attachments": {
