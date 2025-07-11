@@ -117,13 +117,32 @@ class ScanCodeAnalyzer:
             'unknown': [],
             'low_confidence': []
         }
-        for license_key, file_list in license_stats.items():
-            for category, license_list in self.problematic_licenses.items():
-                if any(problem_license in license_key.lower() for problem_license in license_list):
-                    problems[category].extend(file_list)
-            for file_info in file_list:
-                if file_info['score'] < 70:
-                    problems['low_confidence'].append(file_info)
+
+        # Use sets to avoid duplicates if a file matches multiple criteria
+        problem_sets = {key: set() for key in problems.keys()}
+
+        for license_key, file_detections in license_stats.items():
+            for detection_info in file_detections: # detection_info is {'file': ..., 'name': ..., 'score': ...}
+                file_path = detection_info['file']
+                score = detection_info['score']
+                
+                # Check for problematic license types
+                for category, license_list in self.problematic_licenses.items():
+                    if any(problem_license in license_key.lower() for problem_license in license_list):
+                        problem_sets[category].add((file_path, license_key, score)) # Store as tuple for uniqueness
+
+                # Check for low confidence scores (regardless of license type)
+                if score < 70:
+                    problem_sets['low_confidence'].add((file_path, license_key, score))
+
+        # Convert sets back to lists of dictionaries
+        for category, item_set in problem_sets.items():
+            for file_path, license_key, score in item_set:
+                problems[category].append({
+                    'file': file_path,
+                    'name': license_key, # Use key for simplicity, name is often the same
+                    'score': score
+                })
         return problems
 
     def generate_report(self):
