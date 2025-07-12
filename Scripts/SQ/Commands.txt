@@ -1,0 +1,2 @@
+✅ Curl Command to Export Issues as JSON
+curl -u "sqp_....:" "http://localhost:9000/api/issues/search?componentKeys=scancodeMCP&ps=500" -o issues.json
