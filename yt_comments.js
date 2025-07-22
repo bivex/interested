@@ -313,6 +313,8 @@
             // First, expand all hidden replies to make sure we capture everything
             await this.expandAllReplies();
 
+
+
             // Get main comments
             const commentThreads = document.querySelectorAll(`${SELECTORS.COMMENT_THREAD}`);
             this.log(`Found ${commentThreads.length} comment threads`);
@@ -322,71 +324,127 @@
                 const mainComment = thread.querySelector('#main');
                 if (mainComment) {
                     const commentData = this.getCommentText(mainComment);
-                    comments.push({
-                        type: 'comment',
-                        ...commentData,
-                        level: 0
-                    });
-                    this.log(`Added main comment ${threadIndex + 1}: ${commentData.author}`);
+                    // Check if this main comment is already added
+                    const isAlreadyAdded = comments.some(c =>
+                        c.author === commentData.author &&
+                        c.content === commentData.content &&
+                        c.type === 'comment'
+                    );
+
+                    if (!isAlreadyAdded) {
+                        comments.push({
+                            type: 'comment',
+                            ...commentData,
+                            level: 0
+                        });
+                        this.log(`Added main comment ${threadIndex + 1}: ${commentData.author}`);
+                    } else {
+                        this.log(`Skipped duplicate main comment: ${commentData.author}`);
+                    }
                 }
 
                 // Replies - try multiple approaches to find all replies
                 let replyCount = 0;
-                
+
                 // Method 1: Look for reply containers
                 const replyContainers = thread.querySelectorAll('ytd-comment-replies-renderer');
                 this.log(`Thread ${threadIndex + 1}: Found ${replyContainers.length} reply containers`);
-                
+
                 replyContainers.forEach((container, containerIndex) => {
-                    // Get all replies in this container
-                    const replies = container.querySelectorAll('ytd-comment-renderer');
-                    this.log(`Container ${containerIndex + 1}: Found ${replies.length} replies`);
-                    
+                    // Get all replies in this container - look for ytd-comment-view-model with is-reply attribute
+                    const replies = container.querySelectorAll('ytd-comment-view-model[is-reply]');
+                    this.log(`Container ${containerIndex + 1}: Found ${replies.length} replies with is-reply attribute`);
+
                     replies.forEach((reply, replyIndex) => {
                         const replyData = this.getCommentText(reply);
-                        comments.push({
-                            type: 'reply',
-                            ...replyData,
-                            level: 1
-                        });
-                        replyCount++;
-                        this.log(`Added reply ${replyIndex + 1} in container ${containerIndex + 1}: ${replyData.author}`);
+                        // Check if this reply is already added
+                        const isAlreadyAdded = comments.some(c =>
+                            c.author === replyData.author &&
+                            c.content === replyData.content &&
+                            c.type === 'reply'
+                        );
+
+                        if (!isAlreadyAdded) {
+                            comments.push({
+                                type: 'reply',
+                                ...replyData,
+                                level: 1
+                            });
+                            replyCount++;
+                            this.log(`Added reply ${replyIndex + 1} in container ${containerIndex + 1}: ${replyData.author}`);
+                        } else {
+                            this.log(`Skipped duplicate reply: ${replyData.author}`);
+                        }
                     });
+
+                    // Also try looking for any ytd-comment-view-model in the contents div
+                    const contentsDiv = container.querySelector('#contents');
+                    if (contentsDiv) {
+                        const contentReplies = contentsDiv.querySelectorAll('ytd-comment-view-model');
+                        this.log(`Container ${containerIndex + 1}: Found ${contentReplies.length} replies in contents div`);
+
+                        contentReplies.forEach((reply, replyIndex) => {
+                            const replyData = this.getCommentText(reply);
+                            // Check if this reply is already added
+                            const isAlreadyAdded = comments.some(c =>
+                                c.author === replyData.author &&
+                                c.content === replyData.content &&
+                                c.type === 'reply'
+                            );
+
+                            if (!isAlreadyAdded) {
+                                comments.push({
+                                    type: 'reply',
+                                    ...replyData,
+                                    level: 1
+                                });
+                                replyCount++;
+                                this.log(`Added additional reply ${replyIndex + 1} from contents div: ${replyData.author}`);
+                            } else {
+                                this.log(`Skipped duplicate reply from contents div: ${replyData.author}`);
+                            }
+                        });
+                    }
                 });
 
                 // Method 2: Look for replies directly in the thread (fallback)
                 if (replyCount === 0) {
-                    const directReplies = thread.querySelectorAll('ytd-comment-renderer:not(#main)');
-                    this.log(`Thread ${threadIndex + 1}: Found ${directReplies.length} direct replies (fallback)`);
-                    
+                    const directReplies = thread.querySelectorAll('ytd-comment-view-model[is-reply]');
+                    this.log(`Thread ${threadIndex + 1}: Found ${directReplies.length} direct replies with is-reply (fallback)`);
+
                     directReplies.forEach((reply, replyIndex) => {
                         const replyData = this.getCommentText(reply);
-                        comments.push({
-                            type: 'reply',
-                            ...replyData,
-                            level: 1
-                        });
-                        this.log(`Added direct reply ${replyIndex + 1}: ${replyData.author}`);
+                        // Check if this reply is already added
+                        const isAlreadyAdded = comments.some(c =>
+                            c.author === replyData.author &&
+                            c.content === replyData.content &&
+                            c.type === 'reply'
+                        );
+
+                        if (!isAlreadyAdded) {
+                            comments.push({
+                                type: 'reply',
+                                ...replyData,
+                                level: 1
+                            });
+                            this.log(`Added direct reply ${replyIndex + 1}: ${replyData.author}`);
+                        } else {
+                            this.log(`Skipped duplicate direct reply: ${replyData.author}`);
+                        }
                     });
                 }
 
                 // Method 3: Look for any comment elements that might be replies
-                const allCommentElements = thread.querySelectorAll('ytd-comment-renderer');
-                const mainCommentElement = thread.querySelector('#main');
-                const nonMainComments = Array.from(allCommentElements).filter(el => el !== mainCommentElement);
-                
+                const nonMainComments = thread.querySelectorAll('ytd-comment-view-model[is-reply]');
                 if (nonMainComments.length > replyCount) {
-                    this.log(`Thread ${threadIndex + 1}: Found ${nonMainComments.length} total comment elements (excluding main)`);
-                    
+                    this.log(`Thread ${threadIndex + 1}: Found ${nonMainComments.length} reply elements with is-reply`);
                     nonMainComments.forEach((reply, replyIndex) => {
-                        // Check if this reply is already added
                         const replyData = this.getCommentText(reply);
-                        const isAlreadyAdded = comments.some(c => 
-                            c.author === replyData.author && 
-                            c.content === replyData.content && 
+                        const isAlreadyAdded = comments.some(c =>
+                            c.author === replyData.author &&
+                            c.content === replyData.content &&
                             c.type === 'reply'
                         );
-                        
                         if (!isAlreadyAdded) {
                             comments.push({
                                 type: 'reply',
@@ -394,9 +452,47 @@
                                 level: 1
                             });
                             this.log(`Added additional reply ${replyIndex + 1}: ${replyData.author}`);
+                        } else {
+                            this.log(`Skipped duplicate additional reply: ${replyData.author}`);
                         }
                     });
                 }
+
+                // Method 4: Look for any elements that might contain replies (most aggressive)
+                const allPossibleReplies = thread.querySelectorAll('[id*="reply"], [class*="reply"], [data-testid*="reply"]');
+                this.log(`Thread ${threadIndex + 1}: Found ${allPossibleReplies.length} possible reply elements`);
+
+                allPossibleReplies.forEach((element, elementIndex) => {
+                    if (!element.hasAttribute('is-reply')) return;
+                    // Try to find comment content in this element
+                    const authorElement = element.querySelector('#author-text, [class*="author"], [data-testid*="author"]');
+                    const contentElement = element.querySelector('#content-text, [class*="content"], [data-testid*="content"]');
+                    if (authorElement && contentElement) {
+                        const author = authorElement.textContent?.trim() || 'Unknown';
+                        const content = contentElement.textContent?.trim() || '';
+                        if (content && author !== 'Unknown') {
+                            // Check if this reply is already added
+                            const isAlreadyAdded = comments.some(c =>
+                                c.author === author &&
+                                c.content === content &&
+                                c.type === 'reply'
+                            );
+                            if (!isAlreadyAdded) {
+                                comments.push({
+                                    type: 'reply',
+                                    author,
+                                    content,
+                                    time: '',
+                                    formatted: `${author}:\n${content}`,
+                                    level: 1
+                                });
+                                this.log(`Added aggressive reply ${elementIndex + 1}: ${author}`);
+                            } else {
+                                this.log(`Skipped duplicate aggressive reply: ${author}`);
+                            }
+                        }
+                    }
+                });
             });
 
             this.log(`Total comments collected: ${comments.length} (${comments.filter(c => c.type === 'comment').length} main, ${comments.filter(c => c.type === 'reply').length} replies)`);
@@ -415,12 +511,12 @@
 
             try {
                 this.log('Starting to expand all replies...');
-                
-                // Click all "Show more replies" buttons immediately
+
+                // Click all "Show more replies" buttons
                 const showMoreButtons = document.querySelectorAll(
                     `${SELECTORS.SHOW_REPLIES}, ${SELECTORS.HIDDEN_REPLIES}, ${SELECTORS.CONTINUATION_REPLIES}`
                 );
-                
+
                 this.log(`Found ${showMoreButtons.length} buttons to click`);
 
                 for (const button of showMoreButtons) {
@@ -438,13 +534,13 @@
                 const allButtons = document.querySelectorAll('button');
                 const replyButtons = Array.from(allButtons).filter(btn => {
                     const text = btn.textContent.toLowerCase();
-                    return (text.includes('reply') || text.includes('more')) && 
-                           !btn.disabled && 
+                    return (text.includes('reply') || text.includes('more') || text.includes('ответ')) &&
+                           !btn.disabled &&
                            btn.getAttribute('aria-expanded') !== 'true';
                 });
-                
+
                 this.log(`Found ${replyButtons.length} additional reply buttons`);
-                
+
                 for (const button of replyButtons) {
                     try {
                         button.click();
@@ -453,7 +549,7 @@
                         this.log('Error clicking additional reply button:', e);
                     }
                 }
-                
+
             } finally {
                 // Restore previous auto-click state
                 this.autoClickPaused = wasPaused;
@@ -558,19 +654,19 @@
 
             mainButton.addEventListener('click', async (e) => {
                 e.stopPropagation();
-                
+
                 // Copy to clipboard
                 mainButton.textContent = `${copyIcon} Copying...`;
                 mainButton.classList.add('loading');
                 const content = await this.formatAllComments('plain');
                 const copySuccess = await this.copyToClipboard(content);
-                
+
                 // Download file
                 mainButton.textContent = `${downloadIcon} Downloading...`;
                 const videoTitle = document.title.replace(' - YouTube', '').replace(/[^\w\s-]/g, '');
                 const filename = `YouTube-Comments-${videoTitle}-${new Date().toISOString().split('T')[0]}.txt`;
                 const downloadSuccess = await this.downloadAsFile(content, filename);
-                
+
                 // Show feedback
                 if (copySuccess && downloadSuccess) {
                     mainButton.textContent = `${checkIcon} Copied & Downloaded!`;
@@ -599,7 +695,7 @@
                         mainButton.textContent = `${copyIcon} Copy & Download All Comments`;
                     }, 3000);
                 }
-                
+
                 mainButton.classList.remove('loading');
             });
 
@@ -619,7 +715,7 @@
         showButtonFeedback(button, success, originalIcon = copyIcon) {
             button.classList.remove('loading');
             const isDownloadAction = button.textContent.includes('Download');
-            
+
             if (success) {
                 button.textContent = `${checkIcon} ${isDownloadAction ? 'Downloaded!' : 'Copied!'}`;
                 button.classList.add('copied');
