@@ -190,7 +190,7 @@ class SeleniumBrowserDriver:
 
             # Wait for potential new content
             try:
-                time.sleep(2)
+                time.sleep(0.01)
             except:
                 pass
 
@@ -225,12 +225,12 @@ class SeleniumBrowserDriver:
         try:
             if expect_stale:
                 # Wait a bit for old content to start updating
-                time.sleep(2)
+                time.sleep(0.01)
 
             wait = WebDriverWait(self._driver, self._config.element_wait_timeout)
             wait.until(EC.presence_of_element_located((By.TAG_NAME, "article")))
             # Additional wait for content to stabilize
-            time.sleep(2)
+            time.sleep(0.1)
             self._logger.debug("Products loaded successfully")
         except TimeoutException:
             self._logger.warning("Timeout waiting for products to load")
@@ -258,7 +258,7 @@ class SeleniumBrowserDriver:
             self._driver.execute_script(
                 "window.scrollTo(0, document.body.scrollHeight);"
             )
-            time.sleep(2)
+            time.sleep(0.1)
 
             # Check if more products loaded
             new_count = len(self._driver.find_elements(By.TAG_NAME, "article"))
@@ -286,7 +286,7 @@ class SeleniumBrowserDriver:
             self._driver.execute_script(
                 "window.scrollTo(0, document.body.scrollHeight);"
             )
-            time.sleep(1)
+            time.sleep(0.1)
 
             # Try to find and click the next page button
             # AlternativeTo uses <span role="link"> for pagination
@@ -310,7 +310,7 @@ class SeleniumBrowserDriver:
                     self._driver.execute_script(
                         "arguments[0].scrollIntoView({block: 'center'});", element
                     )
-                    time.sleep(0.5)
+                    time.sleep(0.1)
 
                     # Click using JavaScript to avoid interception
                     self._driver.execute_script("arguments[0].click();", element)
@@ -322,13 +322,13 @@ class SeleniumBrowserDriver:
 
                     # Scroll to top after click to trigger content load
                     self._driver.execute_script("window.scrollTo(0, 0);")
-                    time.sleep(1)
+                    time.sleep(0.1)
 
                     # Wait for URL to change or content to update
                     url_changed = self._wait_for_page_change(old_url, timeout=5)
                     if not url_changed:
                         # If URL didn't change, wait a bit more for SPA to update
-                        time.sleep(3)
+                        time.sleep(0.1)
 
                     break
                 except (NoSuchElementException, TimeoutException) as e:
@@ -730,7 +730,7 @@ def main() -> None:
         max_pages=833,  # Number of pages to scrape
         page_load_timeout=20,
         element_wait_timeout=15,  # Increased timeout
-        delay_between_pages=3.0,  # Longer delay
+        delay_between_pages=0.1,  # Longer delay
         headless=False,  # Cloudflare still detects headless mode even with undetected-chromedriver
     )
 
