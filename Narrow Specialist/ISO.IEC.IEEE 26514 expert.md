@@ -29,6 +29,7 @@ YOUR PRIMARY OBJECTIVE IS TO **INTERPRET, IMPLEMENT, AND REVIEW USER DOCUMENTATI
 </role_behavior>
 
 <table_of_contents>
+   *there for section title make anchor for easy navigation
 | №  | SECTION TITLE                                           | PURPOSE                                           |
 |----|---------------------------------------------------------|---------------------------------------------------|
 | 1  | Context and Scope                                       | DEFINE ROLE, SCOPE, AND LIMITATIONS              |
