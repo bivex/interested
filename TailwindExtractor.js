@@ -7,22 +7,28 @@
  * https://github.com/bivex
  *
  * Created: 2025-12-22T05:35:22
- * Last Updated: 2025-12-22T05:44:35
+ * Last Updated: 2025-12-22T05:58:52
  *
  * Licensed under the MIT License.
  * Commercial licensing available upon request.
  */
 
 /**
- * Tailwind CSS Configuration Extractor
+ * Tailwind CSS Configuration Extractor (v3 & v4 Compatible)
  * Drop this script into Chrome DevTools console to extract Tailwind settings from any website
+ *
+ * Features:
+ * - Auto-detects Tailwind v3 or v4
+ * - Extracts CSS variables, colors, spacing, typography, etc.
+ * - Generates ready-to-use config (CSS for v4, JS for v3)
+ * - Supports modern color spaces (oklch, hsl, rgb)
  *
  * Usage: Copy and paste the entire script into the console and press Enter
  */
 
 (function() {
-    console.log('🔍 Tailwind CSS Configuration Extractor');
-    console.log('=====================================');
+    console.log('🔍 Tailwind CSS Configuration Extractor (v3 & v4)');
+    console.log('=================================================');
 
     // Check if Tailwind CSS is loaded with high precision
     function isTailwindLoaded() {
@@ -47,7 +53,11 @@
             try {
                 const content = style.textContent || '';
                 return content.includes('@tailwind') ||
+                       content.includes('@import "tailwindcss"') ||
+                       content.includes("@import 'tailwindcss'") ||
+                       content.includes('@theme') ||
                        content.includes('--tw-') ||
+                       content.includes('--color-') || // v4 uses --color-* variables
                        content.includes('tailwindcss');
             } catch (e) {
                 return false;
@@ -73,9 +83,16 @@
         const computedStyles = getComputedStyle(root);
         const cssProps = Array.from(computedStyles);
         const tailwindVars = cssProps.filter(prop =>
-            prop.startsWith('--tw-') &&
-            (prop.includes('ring') || prop.includes('border') || prop.includes('bg') ||
-             prop.includes('text') || prop.includes('space') || prop.includes('shadow'))
+            // v3 variables
+            (prop.startsWith('--tw-') &&
+             (prop.includes('ring') || prop.includes('border') || prop.includes('bg') ||
+              prop.includes('text') || prop.includes('space') || prop.includes('shadow'))) ||
+            // v4 variables use --color-*, --font-*, --radius-*, etc.
+            prop.startsWith('--color-') ||
+            prop.startsWith('--font-') ||
+            prop.startsWith('--radius-') ||
+            prop.startsWith('--spacing-') ||
+            prop.startsWith('--breakpoint-')
         );
         detectionResults.tailwindVars = tailwindVars.length > 5; // Need multiple vars
         if (detectionResults.tailwindVars) confidenceScore += 4;
@@ -234,6 +251,7 @@
         const grouped = {
             colors: cssProps.filter(p =>
                 p.property.includes('color') ||
+                p.property.startsWith('--color-') || // v4 uses --color-* naming
                 p.property.includes('bg') ||
                 p.property.includes('text') ||
                 p.property.includes('border') ||
@@ -242,6 +260,7 @@
             ),
             spacing: cssProps.filter(p =>
                 p.property.includes('spacing') ||
+                p.property.startsWith('--spacing-') || // v4 spacing
                 p.property.includes('padding') ||
                 p.property.includes('margin') ||
                 p.property.includes('gap') ||
@@ -249,6 +268,7 @@
             ),
             typography: cssProps.filter(p =>
                 p.property.includes('font') ||
+                p.property.startsWith('--font-') || // v4 fonts
                 p.property.includes('text') ||
                 p.property.includes('leading') ||
                 p.property.includes('tracking')
@@ -256,6 +276,7 @@
             borders: cssProps.filter(p =>
                 p.property.includes('border') ||
                 p.property.includes('radius') ||
+                p.property.startsWith('--radius-') || // v4 radius
                 p.property.includes('outline')
             ),
             shadows: cssProps.filter(p =>
@@ -285,18 +306,22 @@
     function extractTailwindColors(cssVars) {
         const colors = {};
 
-        // Common Tailwind color patterns
+        // Common Tailwind color patterns (v3 and v4)
         const colorPatterns = [
             /^--(tw-)?ring$/,
             /^--(tw-)?ring-offset$/,
             /^--(color|tw-color)-([a-z]+)(?:-(\d+))?$/,
+            /^--color-([a-z-]+)$/, // v4 uses --color-* naming
             /^--(background|foreground)$/,
             /^--(primary|secondary|accent|muted|destructive|card|popover|border|input)$/,
             /^--(primary|secondary|accent|muted|destructive|card|popover|border|input)-(foreground|DEFAULT)?$/
         ];
 
         cssVars.colors.forEach(({ property, value }) => {
-            const cleanProp = property.replace(/^--(?:tw-)?/, '');
+            // Clean property name for both v3 and v4 conventions
+            const cleanProp = property
+                .replace(/^--(?:tw-)?/, '')
+                .replace(/^color-/, ''); // v4 removes color- prefix for cleaner names
             colors[cleanProp] = value;
         });
 
@@ -596,8 +621,8 @@
     function displayResults(config) {
         if (!config) return;
 
-        console.log('\n🎯 Tailwind CSS Configuration Extracted (High Precision):');
-        console.log('=======================================================');
+        console.log('\n🎯 Tailwind CSS Configuration Extracted (v3/v4 Compatible):');
+        console.log('===========================================================');
 
         // Summary with precision metrics
         const totalVars = Object.values(config.cssVariables || {}).reduce((sum, group) => sum + (group?.length || 0), 0);
@@ -731,6 +756,9 @@
         console.log('\n📤 Export Options:');
         console.log('   Copy to clipboard: copy(window.extractedTailwindConfig)');
         console.log('   Download as JSON: downloadTailwindConfig()');
+        console.log('   Generate v4 config (CSS): generateTailwindConfig("v4")');
+        console.log('   Generate v3 config (JS): generateTailwindConfig("v3")');
+        console.log('   Auto-detect version: generateTailwindConfig()');
 
         // Add enhanced download function
         window.downloadTailwindConfig = function() {
@@ -743,6 +771,237 @@
             linkElement.setAttribute('href', dataUri);
             linkElement.setAttribute('download', exportFileDefaultName);
             linkElement.click();
+        };
+
+        // Generate Tailwind v4 CSS-based config
+        function generateV4Config(extractedConfig) {
+            let cssConfig = `@import "tailwindcss";\n\n`;
+            cssConfig += `/* Extracted Tailwind v4 Configuration */\n`;
+            cssConfig += `/* Generated from: ${window.location.hostname} */\n`;
+            cssConfig += `/* Date: ${new Date().toISOString().split('T')[0]} */\n\n`;
+
+            cssConfig += `@theme {\n`;
+
+            // Colors
+            if (extractedConfig.cssVariables.colors && extractedConfig.cssVariables.colors.length > 0) {
+                cssConfig += `  /* Color System */\n`;
+                extractedConfig.cssVariables.colors.forEach(({ property, value }) => {
+                    const colorName = property.replace(/^--(?:tw-)?(?:color-)?/, '');
+                    cssConfig += `  --color-${colorName}: ${value};\n`;
+                });
+                cssConfig += '\n';
+            }
+
+            // Spacing
+            if (extractedConfig.cssVariables.spacing && extractedConfig.cssVariables.spacing.length > 0) {
+                cssConfig += `  /* Spacing System */\n`;
+                extractedConfig.cssVariables.spacing.forEach(({ property, value }) => {
+                    const spacingName = property.replace(/^--(?:tw-)?(?:spacing-)?/, '');
+                    cssConfig += `  --spacing-${spacingName}: ${value};\n`;
+                });
+                cssConfig += '\n';
+            }
+
+            // Typography
+            if (extractedConfig.cssVariables.typography && extractedConfig.cssVariables.typography.length > 0) {
+                cssConfig += `  /* Typography System */\n`;
+                extractedConfig.cssVariables.typography.forEach(({ property, value }) => {
+                    const propName = property.replace(/^--(?:tw-)?/, '');
+                    if (propName.includes('font-family')) {
+                        const fontName = propName.replace('font-family-', '').replace('font-', '');
+                        cssConfig += `  --font-${fontName}: ${value};\n`;
+                    } else if (propName.includes('font-size') || propName.startsWith('text-')) {
+                        const sizeName = propName.replace('font-size-', '').replace('text-', '');
+                        cssConfig += `  --font-size-${sizeName}: ${value};\n`;
+                    }
+                });
+                cssConfig += '\n';
+            }
+
+            // Border Radius
+            if (extractedConfig.cssVariables.borders && extractedConfig.cssVariables.borders.length > 0) {
+                cssConfig += `  /* Border Radius */\n`;
+                extractedConfig.cssVariables.borders.forEach(({ property, value }) => {
+                    if (property.includes('radius')) {
+                        const radiusName = property.replace(/^--(?:tw-)?/, '').replace('border-radius-', '');
+                        cssConfig += `  --radius-${radiusName}: ${value};\n`;
+                    }
+                });
+                cssConfig += '\n';
+            }
+
+            // Breakpoints
+            if (extractedConfig.theme.screens && Object.keys(extractedConfig.theme.screens).length > 0) {
+                cssConfig += `  /* Breakpoints */\n`;
+                Object.entries(extractedConfig.theme.screens).forEach(([name, value]) => {
+                    cssConfig += `  --breakpoint-${name}: ${value};\n`;
+                });
+                cssConfig += '\n';
+            }
+
+            cssConfig += `}\n`;
+
+            console.log('🎨 Generated Tailwind v4 Config (CSS):');
+            console.log('======================================');
+            console.log(cssConfig);
+
+            window.generatedTailwindV4Config = cssConfig;
+            console.log('\n📋 Config available as: window.generatedTailwindV4Config');
+
+            // Auto-copy to clipboard if available
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(cssConfig).then(() => {
+                    console.log('✅ Config copied to clipboard!');
+                }).catch(() => {
+                    console.log('⚠️ Could not copy to clipboard, use window.generatedTailwindV4Config');
+                });
+            }
+
+            return cssConfig;
+        }
+
+        // Add function to generate clean Tailwind config from extracted data
+        window.generateTailwindConfig = function(version = 'auto') {
+            const extractedConfig = window.extractedTailwindConfig;
+            if (!extractedConfig) {
+                console.error('No extracted config found. Run the extractor first.');
+                return;
+            }
+
+            // Auto-detect version if not specified
+            if (version === 'auto') {
+                const versionInfo = detectTailwindVersion(extractedConfig);
+                version = versionInfo.version || 'v4'; // Default to v4
+                console.log(`📌 Detected Tailwind ${version} (${versionInfo.confidence} confidence)`);
+            }
+
+            // Generate v4 config (CSS-based)
+            if (version === 'v4') {
+                return generateV4Config(extractedConfig);
+            }
+
+            // Generate v3 config (JavaScript-based)
+            const cleanConfig = {
+                darkMode: extractedConfig.darkMode.darkModeStrategy === 'class' ? 'class' : 'media',
+                content: ['./src/**/*.{html,ts,js,jsx,tsx,vue,svelte}'], // Default content paths
+                theme: {
+                    extend: {}
+                },
+                plugins: []
+            };
+
+            // Process colors
+            if (extractedConfig.cssVariables.colors && extractedConfig.cssVariables.colors.length > 0) {
+                const colorMap = {};
+
+                // Group colors by base name
+                extractedConfig.cssVariables.colors.forEach(({ property, value }) => {
+                    const propName = property.replace(/^--(?:tw-)?color-/, '').replace(/^--/, '');
+
+                    // Handle semantic colors
+                    if (propName === 'background') colorMap.background = value;
+                    else if (propName === 'foreground') colorMap.foreground = value;
+                    else if (propName === 'primary') colorMap.primary = { DEFAULT: value };
+                    else if (propName === 'secondary') colorMap.secondary = { DEFAULT: value };
+                    else if (propName === 'accent') colorMap.accent = { DEFAULT: value };
+                    else if (propName === 'muted') colorMap.muted = { DEFAULT: value };
+                    else if (propName === 'destructive') colorMap.destructive = { DEFAULT: value };
+                    else if (propName === 'border') colorMap.border = value;
+                    else if (propName === 'input') colorMap.input = value;
+                    else if (propName === 'ring') colorMap.ring = value;
+                    else if (propName === 'card') colorMap.card = { DEFAULT: value };
+                    else if (propName === 'popover') colorMap.popover = { DEFAULT: value };
+                    // Handle color palettes (zinc-50, blue-500, etc.)
+                    else {
+                        const colorMatch = propName.match(/^([a-z]+)-(\d+)$/);
+                        if (colorMatch) {
+                            const [, colorName, shade] = colorMatch;
+                            if (!colorMap[colorName]) colorMap[colorName] = {};
+                            colorMap[colorName][shade] = value;
+                        }
+                    }
+                });
+
+                if (Object.keys(colorMap).length > 0) {
+                    cleanConfig.theme.extend.colors = colorMap;
+                }
+            }
+
+            // Process spacing
+            if (extractedConfig.cssVariables.spacing && extractedConfig.cssVariables.spacing.length > 0) {
+                const spacingMap = {};
+                extractedConfig.cssVariables.spacing.forEach(({ property, value }) => {
+                    const propName = property.replace(/^--(?:tw-)?/, '');
+                    if (propName.startsWith('space-') || propName.startsWith('spacing')) {
+                        spacingMap[propName.replace('spacing', 'space-y').replace('space-', '')] = value;
+                    }
+                });
+                if (Object.keys(spacingMap).length > 0) {
+                    cleanConfig.theme.extend.spacing = spacingMap;
+                }
+            }
+
+            // Process typography
+            if (extractedConfig.cssVariables.typography && extractedConfig.cssVariables.typography.length > 0) {
+                const fontMap = {};
+                const textSizeMap = {};
+
+                extractedConfig.cssVariables.typography.forEach(({ property, value }) => {
+                    const propName = property.replace(/^--(?:tw-)?/, '');
+
+                    if (propName.includes('font-family')) {
+                        const fontName = propName.replace('font-family-', '').replace('font-', '');
+                        fontMap[fontName] = value.replace(/"/g, '').split(', ');
+                    } else if (propName.startsWith('text-') && propName.includes('line-height')) {
+                        // Skip line-height for now as it's complex
+                    } else if (propName.startsWith('text-')) {
+                        const size = propName.replace('text-', '');
+                        textSizeMap[size] = value;
+                    }
+                });
+
+                if (Object.keys(fontMap).length > 0) {
+                    cleanConfig.theme.extend.fontFamily = fontMap;
+                }
+                if (Object.keys(textSizeMap).length > 0) {
+                    cleanConfig.theme.extend.fontSize = textSizeMap;
+                }
+            }
+
+            // Process border radius
+            if (extractedConfig.theme.borderRadius && Object.keys(extractedConfig.theme.borderRadius).length > 0) {
+                cleanConfig.theme.extend.borderRadius = extractedConfig.theme.borderRadius;
+            }
+
+            // Process screens
+            if (extractedConfig.theme.screens && Object.keys(extractedConfig.theme.screens).length > 0) {
+                cleanConfig.theme.extend.screens = extractedConfig.theme.screens;
+            }
+
+            // Generate the config as a string
+            const configString = `/** @type {import('tailwindcss').Config} */\nmodule.exports = ${JSON.stringify(cleanConfig, null, 2)};`;
+
+            console.log('🎨 Generated Tailwind Config:');
+            console.log('==============================');
+            console.log(configString);
+
+            // Make it available for copying
+            window.generatedTailwindConfig = cleanConfig;
+            window.generatedTailwindConfigString = configString;
+
+            console.log('\n📋 Config string available as: window.generatedTailwindConfigString');
+            console.log('📋 Config object available as: window.generatedTailwindConfig');
+
+            // Auto-copy to clipboard if available
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(configString).then(() => {
+                    console.log('✅ Config copied to clipboard!');
+                }).catch(() => {
+                    console.log('⚠️ Could not copy to clipboard, use window.generatedTailwindConfigString');
+                });
+            }
+
+            return cleanConfig;
         };
 
         // Show precision indicators
@@ -806,13 +1065,32 @@
     function detectTailwindVersion(config) {
         // Version detection based on patterns
         const indicators = {
-            'v4': ['--tw-', 'oklch(', 'container-query'],
-            'v3': ['--tw-ring', 'hsl(', 'backdrop-blur'],
-            'v2': ['--tw-shadow', 'rgb(', 'filter']
+            'v4': [
+                '--color-', // v4 uses --color-* variables
+                '--font-', // v4 font variables
+                '--radius-', // v4 radius variables
+                'oklch(', // v4 uses modern color spaces
+                '@theme', // v4 uses @theme directive
+                '@import "tailwindcss"' // v4 import syntax
+            ],
+            'v3': [
+                '--tw-ring',
+                '--tw-shadow',
+                'hsl(',
+                'backdrop-blur',
+                '@tailwind'
+            ],
+            'v2': [
+                '--tw-shadow',
+                'rgb(',
+                'filter',
+                '@apply'
+            ]
         };
 
         let bestMatch = null;
         let maxConfidence = 0;
+        let versionScores = {};
 
         Object.entries(indicators).forEach(([version, patterns]) => {
             let confidence = 0;
@@ -824,15 +1102,35 @@
                 if (hasVar) confidence++;
 
                 // Check classes
-                const hasClass = config.usedClasses.some(cls => cls.includes(pattern.replace('--tw-', '')));
+                const hasClass = config.usedClasses.some(cls => cls.includes(pattern.replace('--tw-', '').replace('--color-', '').replace('--font-', '').replace('--radius-', '')));
                 if (hasClass) confidence++;
+
+                // Check for @theme or @import in style tags (v4 specific)
+                if (pattern.startsWith('@')) {
+                    const styleTags = Array.from(document.querySelectorAll('style'));
+                    const hasDirective = styleTags.some(style => {
+                        try {
+                            return style.textContent && style.textContent.includes(pattern);
+                        } catch (e) {
+                            return false;
+                        }
+                    });
+                    if (hasDirective) confidence += 2; // Higher weight for directive detection
+                }
             });
 
+            versionScores[version] = confidence;
             if (confidence > maxConfidence) {
                 maxConfidence = confidence;
                 bestMatch = version;
             }
         });
+
+        // Special case: if we have v4 indicators, strongly prefer v4
+        if (versionScores['v4'] >= 2) {
+            bestMatch = 'v4';
+            maxConfidence = versionScores['v4'];
+        }
 
         let confidence = 'Low';
         if (maxConfidence >= 4) confidence = 'High';
@@ -840,7 +1138,8 @@
 
         return {
             version: bestMatch,
-            confidence: confidence
+            confidence: confidence,
+            scores: versionScores
         };
     }
 
