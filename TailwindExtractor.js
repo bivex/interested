@@ -7,7 +7,7 @@
  * https://github.com/bivex
  *
  * Created: 2025-12-22T05:35:22
- * Last Updated: 2025-12-22T05:58:52
+ * Last Updated: 2025-12-22T06:10:41
  *
  * Licensed under the MIT License.
  * Commercial licensing available upon request.
@@ -271,7 +271,15 @@
                 p.property.startsWith('--font-') || // v4 fonts
                 p.property.includes('text') ||
                 p.property.includes('leading') ||
-                p.property.includes('tracking')
+                p.property.includes('tracking') ||
+                p.property.includes('letter-spacing') ||
+                p.property.includes('line-height') ||
+                p.property.includes('font-weight') ||
+                p.property.includes('text-decoration') ||
+                p.property.includes('font-feature') ||
+                p.property.includes('font-variation') ||
+                p.property.includes('ligatures') ||
+                p.property.includes('numerical')
             ),
             borders: cssProps.filter(p =>
                 p.property.includes('border') ||
@@ -289,10 +297,15 @@
                 p.property.includes('transform')
             ),
             other: cssProps.filter(p =>
-                !p.property.includes('color') && !p.property.includes('bg') && !p.property.includes('text') &&
+                !p.property.includes('color') && !p.property.includes('bg') &&
                 !p.property.includes('spacing') && !p.property.includes('padding') && !p.property.includes('margin') &&
                 !p.property.includes('gap') && !/^--tw-space-/.test(p.property) &&
                 !p.property.includes('font') && !p.property.includes('leading') && !p.property.includes('tracking') &&
+                !p.property.includes('letter-spacing') && !p.property.includes('line-height') &&
+                !p.property.includes('font-weight') && !p.property.includes('text-decoration') &&
+                !p.property.includes('font-feature') && !p.property.includes('font-variation') &&
+                !p.property.includes('ligatures') && !p.property.includes('numerical') &&
+                !p.property.includes('text') &&
                 !p.property.includes('border') && !p.property.includes('radius') && !p.property.includes('outline') &&
                 !p.property.includes('shadow') &&
                 !p.property.includes('animation') && !p.property.includes('transition') && !p.property.includes('transform')
@@ -340,22 +353,71 @@
         return spacing;
     }
 
-    // Extract typography settings
+    // Extract comprehensive typography settings
     function extractTypography(cssVars) {
         const typography = {
             fonts: {},
-            sizes: {}
+            sizes: {},
+            weights: {},
+            lineHeights: {},
+            letterSpacing: {},
+            textDecoration: {},
+            fontFeatures: {},
+            other: {}
         };
 
         cssVars.typography.forEach(({ property, value }) => {
             const cleanProp = property.replace(/^--(?:tw-)?/, '');
 
-            if (cleanProp.includes('font') && cleanProp.includes('family')) {
-                const fontName = cleanProp.replace('font-family-', '').replace('font-', '');
-                typography.fonts[fontName] = value;
-            } else if (cleanProp.includes('font') && cleanProp.includes('size')) {
+            // Font families (both v3 and v4 formats)
+            if (cleanProp.includes('font-family') || cleanProp.startsWith('font-') && !cleanProp.includes('size') && !cleanProp.includes('weight')) {
+                let fontName = cleanProp.replace('font-family-', '').replace('font-', '');
+                if (fontName === 'sans' || fontName === 'serif' || fontName === 'mono') {
+                    typography.fonts[fontName] = value;
+                } else {
+                    typography.fonts[fontName] = value;
+                }
+            }
+            // Font sizes
+            else if (cleanProp.includes('font-size') || (cleanProp.startsWith('text-') && /^\d/.test(cleanProp.replace('text-', '')))) {
                 const sizeName = cleanProp.replace('font-size-', '').replace('text-', '');
                 typography.sizes[sizeName] = value;
+            }
+            // Font weights
+            else if (cleanProp.includes('font-weight') || cleanProp.startsWith('font-') && /\b(thin|extralight|light|normal|medium|semibold|bold|extrabold|black)\b/.test(cleanProp)) {
+                const weightName = cleanProp.replace('font-weight-', '').replace('font-', '');
+                typography.weights[weightName] = value;
+            }
+            // Line heights
+            else if (cleanProp.includes('leading') || cleanProp.includes('line-height')) {
+                const leadingName = cleanProp.replace('leading-', '').replace('line-height-', '');
+                typography.lineHeights[leadingName] = value;
+            }
+            // Letter spacing
+            else if (cleanProp.includes('tracking') || cleanProp.includes('letter-spacing')) {
+                const trackingName = cleanProp.replace('tracking-', '').replace('letter-spacing-', '');
+                typography.letterSpacing[trackingName] = value;
+            }
+            // Text decoration
+            else if (cleanProp.includes('text-decoration') || cleanProp.includes('underline') || cleanProp.includes('overline') || cleanProp.includes('line-through')) {
+                const decorationName = cleanProp.replace('text-decoration-', '');
+                typography.textDecoration[decorationName] = value;
+            }
+            // Font features and variations
+            else if (cleanProp.includes('font-feature') || cleanProp.includes('font-variation') || cleanProp.includes('ligatures') || cleanProp.includes('numerical')) {
+                const featureName = cleanProp.replace('font-feature-settings-', '').replace('font-variation-settings-', '');
+                typography.fontFeatures[featureName] = value;
+            }
+            // Other typography properties
+            else {
+                typography.other[cleanProp] = value;
+            }
+        });
+
+        // Clean up empty categories
+        Object.keys(typography).forEach(key => {
+            if (Object.keys(typography[key]).length === 0) {
+                delete typography[key];
             }
         });
 
@@ -484,12 +546,20 @@
             /^text-(red|blue|green|yellow|purple|pink|indigo|gray|slate|zinc|neutral|stone)-(50|100|200|300|400|500|600|700|800|900|950)$/,
             /^text-(white|black|transparent|current)$/,
             /^border-(red|blue|green|yellow|purple|pink|indigo|gray|slate|zinc|neutral|stone)-(50|100|200|300|400|500|600|700|800|900|950)$/,
-            // Typography
-            /^text-(xs|sm|base|lg|xl|2xl|3xl|4xl|5xl|6xl|7xl|8xl|9xl)$/,
-            /^font-(thin|extralight|light|normal|medium|semibold|bold|extrabold|black)$/,
-            /^font-(sans|serif|mono)$/,
-            /^leading-(3|4|5|6|7|8|9|10|none|tight|snug|normal|relaxed|loose)$/,
-            /^tracking-(tighter|tight|normal|wide|wider|widest)$/,
+                // Typography (comprehensive)
+                /^text-(xs|sm|base|lg|xl|2xl|3xl|4xl|5xl|6xl|7xl|8xl|9xl)$/,
+                /^font-(thin|extralight|light|normal|medium|semibold|bold|extrabold|black)$/,
+                /^font-(sans|serif|mono)$/,
+                /^font-(100|200|300|400|500|600|700|800|900)$/,
+                /^leading-(3|4|5|6|7|8|9|10|none|tight|snug|normal|relaxed|loose)$/,
+                /^tracking-(tighter|tight|normal|wide|wider|widest)$/,
+                /^text-(left|center|right|justify)$/,
+                /^text-(uppercase|lowercase|capitalize)$/,
+                /^underline$/, /^line-through$/, /^no-underline$/,
+                /^italic$/, /^not-italic$/,
+                /^whitespace-(normal|nowrap|pre|pre-line|pre-wrap)$/,
+                /^break-(normal|words|all)$/,
+                /^truncate$/, /^text-ellipsis$/, /^text-clip$/,
             // Borders
             /^rounded$/,
             /^rounded-(sm|md|lg|xl|2xl|3xl|full)$/,
@@ -671,16 +741,38 @@
             });
         }
 
-        // Typography (enhanced)
+        // Typography (comprehensive)
         if (config.cssVariables?.typography?.length > 0) {
             console.log('\n📝 Typography System:');
             const typographyByType = groupTypographyByType(config.cssVariables.typography);
             Object.entries(typographyByType).forEach(([type, vars]) => {
                 console.log(`   ${type}: ${vars.length} variables`);
-                if (type === 'Font Families' && vars.length > 0) {
-                    vars.slice(0, 3).forEach(({ property, value }) => {
-                        console.log(`     ${property}: ${value}`);
-                    });
+                if (vars.length > 0) {
+                    // Show different preview based on category
+                    if (type === 'Font Families') {
+                        vars.slice(0, 4).forEach(({ property, value }) => {
+                            const fontName = property.replace(/^--(?:tw-)?(?:font-)?(?:family-)?/, '');
+                            console.log(`     ${fontName}: ${value}`);
+                        });
+                    } else if (type === 'Font Sizes') {
+                        vars.slice(0, 6).forEach(({ property, value }) => {
+                            const sizeName = property.replace(/^--(?:tw-)?(?:font-size-|text-)/, '');
+                            console.log(`     ${sizeName}: ${value}`);
+                        });
+                    } else if (type === 'Font Weights') {
+                        vars.slice(0, 5).forEach(({ property, value }) => {
+                            const weightName = property.replace(/^--(?:tw-)?(?:font-weight-|font-)/, '');
+                            console.log(`     ${weightName}: ${value}`);
+                        });
+                    } else {
+                        vars.slice(0, 3).forEach(({ property, value }) => {
+                            const propName = property.replace(/^--(?:tw-)?/, '');
+                            console.log(`     ${propName}: ${value}`);
+                        });
+                    }
+                    if (vars.length > (type === 'Font Families' ? 4 : type === 'Font Sizes' ? 6 : 3)) {
+                        console.log(`     ... and ${vars.length - (type === 'Font Families' ? 4 : type === 'Font Sizes' ? 6 : 3)} more`);
+                    }
                 }
             });
         }
@@ -739,7 +831,7 @@
         const summary = [
             `🎨 Colors: ${config.cssVariables?.colors?.length || 0}`,
             `📏 Spacing: ${config.cssVariables?.spacing?.length || 0}`,
-            `📝 Typography: ${config.cssVariables?.typography?.length || 0}`,
+            `📝 Typography: ${config.cssVariables?.typography?.length || 0} (fonts, sizes, weights, spacing)`,
             `📐 Layout: ${config.cssVariables?.layout?.length || 0}`,
             `✨ Effects: ${config.cssVariables?.effects?.length || 0}`,
             `🎭 Animations: ${config.cssVariables?.animations?.length || 0}`,
@@ -802,17 +894,40 @@
                 cssConfig += '\n';
             }
 
-            // Typography
+            // Typography (comprehensive)
             if (extractedConfig.cssVariables.typography && extractedConfig.cssVariables.typography.length > 0) {
                 cssConfig += `  /* Typography System */\n`;
                 extractedConfig.cssVariables.typography.forEach(({ property, value }) => {
                     const propName = property.replace(/^--(?:tw-)?/, '');
-                    if (propName.includes('font-family')) {
+
+                    // Font families
+                    if (propName.includes('font-family') || (propName.startsWith('font-') && !propName.includes('size') && !propName.includes('weight'))) {
                         const fontName = propName.replace('font-family-', '').replace('font-', '');
                         cssConfig += `  --font-${fontName}: ${value};\n`;
-                    } else if (propName.includes('font-size') || propName.startsWith('text-')) {
+                    }
+                    // Font sizes
+                    else if (propName.includes('font-size') || (propName.startsWith('text-') && /^\d/.test(propName.replace('text-', '')))) {
                         const sizeName = propName.replace('font-size-', '').replace('text-', '');
                         cssConfig += `  --font-size-${sizeName}: ${value};\n`;
+                    }
+                    // Font weights
+                    else if (propName.includes('font-weight') || propName.startsWith('font-') && /\b(thin|extralight|light|normal|medium|semibold|bold|extrabold|black)\b/.test(propName)) {
+                        const weightName = propName.replace('font-weight-', '').replace('font-', '');
+                        cssConfig += `  --font-weight-${weightName}: ${value};\n`;
+                    }
+                    // Line heights
+                    else if (propName.includes('leading') || propName.includes('line-height')) {
+                        const leadingName = propName.replace('leading-', '').replace('line-height-', '');
+                        cssConfig += `  --leading-${leadingName}: ${value};\n`;
+                    }
+                    // Letter spacing
+                    else if (propName.includes('tracking') || propName.includes('letter-spacing')) {
+                        const trackingName = propName.replace('tracking-', '').replace('letter-spacing-', '');
+                        cssConfig += `  --tracking-${trackingName}: ${value};\n`;
+                    }
+                    // Other typography properties
+                    else {
+                        cssConfig += `  --${propName}: ${value};\n`;
                     }
                 });
                 cssConfig += '\n';
@@ -941,22 +1056,41 @@
                 }
             }
 
-            // Process typography
+            // Process typography (comprehensive)
             if (extractedConfig.cssVariables.typography && extractedConfig.cssVariables.typography.length > 0) {
                 const fontMap = {};
                 const textSizeMap = {};
+                const fontWeightMap = {};
+                const lineHeightMap = {};
+                const letterSpacingMap = {};
 
                 extractedConfig.cssVariables.typography.forEach(({ property, value }) => {
                     const propName = property.replace(/^--(?:tw-)?/, '');
 
-                    if (propName.includes('font-family')) {
+                    // Font families
+                    if (propName.includes('font-family') || (propName.startsWith('font-') && !propName.includes('size') && !propName.includes('weight'))) {
                         const fontName = propName.replace('font-family-', '').replace('font-', '');
                         fontMap[fontName] = value.replace(/"/g, '').split(', ');
-                    } else if (propName.startsWith('text-') && propName.includes('line-height')) {
-                        // Skip line-height for now as it's complex
-                    } else if (propName.startsWith('text-')) {
-                        const size = propName.replace('text-', '');
+                    }
+                    // Font sizes
+                    else if (propName.includes('font-size') || (propName.startsWith('text-') && /^\d/.test(propName.replace('text-', '')))) {
+                        const size = propName.replace('font-size-', '').replace('text-', '');
                         textSizeMap[size] = value;
+                    }
+                    // Font weights
+                    else if (propName.includes('font-weight') || propName.startsWith('font-') && /\b(thin|extralight|light|normal|medium|semibold|bold|extrabold|black)\b/.test(propName)) {
+                        const weightName = propName.replace('font-weight-', '').replace('font-', '');
+                        fontWeightMap[weightName] = value;
+                    }
+                    // Line heights
+                    else if (propName.includes('leading') || propName.includes('line-height')) {
+                        const leadingName = propName.replace('leading-', '').replace('line-height-', '');
+                        lineHeightMap[leadingName] = value;
+                    }
+                    // Letter spacing
+                    else if (propName.includes('tracking') || propName.includes('letter-spacing')) {
+                        const trackingName = propName.replace('tracking-', '').replace('letter-spacing-', '');
+                        letterSpacingMap[trackingName] = value;
                     }
                 });
 
@@ -965,6 +1099,15 @@
                 }
                 if (Object.keys(textSizeMap).length > 0) {
                     cleanConfig.theme.extend.fontSize = textSizeMap;
+                }
+                if (Object.keys(fontWeightMap).length > 0) {
+                    cleanConfig.theme.extend.fontWeight = fontWeightMap;
+                }
+                if (Object.keys(lineHeightMap).length > 0) {
+                    cleanConfig.theme.extend.lineHeight = lineHeightMap;
+                }
+                if (Object.keys(letterSpacingMap).length > 0) {
+                    cleanConfig.theme.extend.letterSpacing = letterSpacingMap;
                 }
             }
 
@@ -1040,13 +1183,47 @@
         };
     }
 
-    function groupTypographyByType(typography) {
-        return {
-            'Font Families': typography.filter(t => t.property.includes('font-family')),
-            'Font Sizes': typography.filter(t => t.property.includes('font-size') || t.property.includes('text-')),
-            'Line Heights': typography.filter(t => t.property.includes('leading')),
-            'Letter Spacing': typography.filter(t => t.property.includes('tracking'))
-        };
+    function groupTypographyByType(typographyVars) {
+        const groups = {};
+
+        typographyVars.forEach(({ property, value }) => {
+            const cleanProp = property.replace(/^--(?:tw-)?/, '');
+
+            if (cleanProp.includes('font-family') || (cleanProp.startsWith('font-') && !cleanProp.includes('size') && !cleanProp.includes('weight'))) {
+                if (!groups['Font Families']) groups['Font Families'] = [];
+                groups['Font Families'].push({ property, value });
+            }
+            else if (cleanProp.includes('font-size') || (cleanProp.startsWith('text-') && /^\d/.test(cleanProp.replace('text-', '')))) {
+                if (!groups['Font Sizes']) groups['Font Sizes'] = [];
+                groups['Font Sizes'].push({ property, value });
+            }
+            else if (cleanProp.includes('font-weight') || cleanProp.startsWith('font-') && /\b(thin|extralight|light|normal|medium|semibold|bold|extrabold|black)\b/.test(cleanProp)) {
+                if (!groups['Font Weights']) groups['Font Weights'] = [];
+                groups['Font Weights'].push({ property, value });
+            }
+            else if (cleanProp.includes('leading') || cleanProp.includes('line-height')) {
+                if (!groups['Line Heights']) groups['Line Heights'] = [];
+                groups['Line Heights'].push({ property, value });
+            }
+            else if (cleanProp.includes('tracking') || cleanProp.includes('letter-spacing')) {
+                if (!groups['Letter Spacing']) groups['Letter Spacing'] = [];
+                groups['Letter Spacing'].push({ property, value });
+            }
+            else if (cleanProp.includes('text-decoration') || cleanProp.includes('underline') || cleanProp.includes('overline') || cleanProp.includes('line-through')) {
+                if (!groups['Text Decoration']) groups['Text Decoration'] = [];
+                groups['Text Decoration'].push({ property, value });
+            }
+            else if (cleanProp.includes('font-feature') || cleanProp.includes('font-variation') || cleanProp.includes('ligatures') || cleanProp.includes('numerical')) {
+                if (!groups['Font Features']) groups['Font Features'] = [];
+                groups['Font Features'].push({ property, value });
+            }
+            else {
+                if (!groups['Other Typography']) groups['Other Typography'] = [];
+                groups['Other Typography'].push({ property, value });
+            }
+        });
+
+        return groups;
     }
 
     function categorizeClasses(classes) {
@@ -1054,7 +1231,11 @@
             'Layout': classes.filter(c => c.startsWith('flex') || c.startsWith('grid') || c.startsWith('block') || c.startsWith('hidden')),
             'Spacing': classes.filter(c => c.startsWith('p-') || c.startsWith('m-') || c.startsWith('space-')),
             'Colors': classes.filter(c => c.startsWith('bg-') || c.startsWith('text-') || c.startsWith('border-')),
-            'Typography': classes.filter(c => c.startsWith('text-') || c.startsWith('font-') || c.startsWith('leading-')),
+            'Typography': classes.filter(c =>
+                c.startsWith('text-') || c.startsWith('font-') || c.startsWith('leading-') ||
+                c.startsWith('tracking-') || c.startsWith('whitespace-') || c.startsWith('break-') ||
+                c === 'truncate' || c === 'italic' || c === 'underline' || c === 'line-through'
+            ),
             'Effects': classes.filter(c => c.startsWith('shadow') || c.startsWith('opacity') || c.startsWith('blur')),
             'Borders': classes.filter(c => c.startsWith('rounded') || c.startsWith('border')),
             'Responsive': classes.filter(c => /^(sm|md|lg|xl|2xl):/.test(c)),
