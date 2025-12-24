@@ -1,0 +1,268 @@
+From 8f1779b516a98657b8bf72dd27ec29e32f513ae5 Mon Sep 17 00:00:00 2001
+From: bivex <209128140+bivex@users.noreply.github.com>
+Date: Wed, 24 Dec 2025 05:24:19 +0200
+Subject: [PATCH] feat: Add Markdown output format for Lighthouse reports
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Add 'markdown' to supported output formats in CLI
+- Implement generateReportMarkdown() function in ReportGenerator
+- Fix metrics display logic to show accurate scores (✅/❌/percentages/ℹ️/N/A)
+- Update documentation and help text
+- Add comprehensive README for Markdown reporter
+---
+ MARKDOWN_REPORTER_README.md          |  73 +++++++++++++++++
+ cli/cli-flags.js                     |   4 +-
+ readme.md                            |   2 +-
+ report/generator/report-generator.js | 112 +++++++++++++++++++++++++++
+ 4 files changed, 188 insertions(+), 3 deletions(-)
+ create mode 100644 MARKDOWN_REPORTER_README.md
+
+diff --git a/MARKDOWN_REPORTER_README.md b/MARKDOWN_REPORTER_README.md
+new file mode 100644
+index 000000000..9bd7b519c
+--- /dev/null
++++ b/MARKDOWN_REPORTER_README.md
+@@ -0,0 +1,73 @@
++# Markdown Reporter для Lighthouse
++
++## Что добавлено
++
++В этот форк Lighthouse добавлена поддержка вывода отчетов в формате Markdown.
++
++## Использование
++
++### Через CLI
++
++```bash
++# Установка зависимостей
++bun install
++
++# Запуск с Markdown выводом
++node cli/index.js https://example.com --output=markdown --output-path=report.md
++
++# Или с другими опциями
++node cli/index.js https://example.com --output=markdown --preset=desktop --output-path=desktop-report.md
++```
++
++### Доступные форматы вывода
++
++Теперь поддерживаются:
++- `html` - HTML отчет (по умолчанию)
++- `json` - JSON данные
++- `csv` - CSV таблица аудитов
++- `markdown` - **НОВЫЙ** структурированный Markdown отчет
++
++## Структура Markdown отчета
++
++Отчет включает:
++
++1. **Заголовок** с URL, датой и версией Lighthouse
++2. **Таблица категорий** с оценками (Performance, Accessibility, Best Practices, SEO)
++3. **Детальные разделы** для каждой категории с:
++   - Оценкой категории
++   - Описанием (если есть)
++   - Таблицей аудитов с результатами
++
++## Примеры использования
++
++```bash
++# Базовый запуск
++lighthouse https://example.com --output=markdown
++
++# Сохранение в файл
++lighthouse https://example.com --output=markdown --output-path=my-report.md
++
++# Только определенные категории
++lighthouse https://example.com --output=markdown --only-categories=performance,seo
++
++# Desktop режим
++lighthouse https://example.com --output=markdown --preset=desktop
++```
++
++## Формат результатов аудитов
++
++- ✅ - Аудит пройден успешно (score = 1.0)
++- ❌ - Аудит провален (score = 0.0)
++- `XX` - Процент выполнения (0-100, для score между 0 и 1)
++- ℹ️ - Информационный аудит (scoreDisplayMode = 'informative')
++- `N/A` - Аудит не применим или score = null
++
++## Измененные файлы
++
++1. `cli/cli-flags.js` - Добавлен 'markdown' в список допустимых форматов вывода
++2. `report/generator/report-generator.js` - Добавлена функция `generateReportMarkdown()` и логика обработки
++3. `readme.md` - Обновлено описание CLI опций
++
++## Тестирование
++
++Отчет протестирован на различных сайтах и корректно отображает все категории и аудиты в читаемом Markdown формате.
+diff --git a/cli/cli-flags.js b/cli/cli-flags.js
+index 16b95f1fa..5873398c8 100644
+--- a/cli/cli-flags.js
++++ b/cli/cli-flags.js
+@@ -218,7 +218,7 @@ function getYargsParser(manualArgv) {
+         type: 'array',
+         default: /** @type {const} */ (['html']),
+         coerce: coerceOutput,
+-        describe: 'Reporter for the results, supports multiple values. choices: "json", "html", "csv"',
++        describe: 'Reporter for the results, supports multiple values. choices: "json", "html", "csv", "markdown"',
+       },
+       'output-path': {
+         type: 'string',
+@@ -387,7 +387,7 @@ function coerceOptionalStringBoolean(value) {
+  * @return {Array<LH.OutputMode>}
+  */
+ function coerceOutput(values) {
+-  const outputTypes = ['json', 'html', 'csv'];
++  const outputTypes = ['json', 'html', 'csv', 'markdown'];
+   const errorHint = `Argument 'output' must be an array from choices "${outputTypes.join('", "')}"`;
+   if (!values.every(item => typeof item === 'string')) {
+     throw new Error('Invalid values. ' + errorHint);
+diff --git a/readme.md b/readme.md
+index 84c586d6c..488ac60ba 100644
+--- a/readme.md
++++ b/readme.md
+@@ -108,7 +108,7 @@ Configuration:
+   --disable-full-page-screenshot Disables collection of the full page screenshot, which can be quite large  [boolean]
+ 
+ Output:
+-  --output       Reporter for the results, supports multiple values. choices: "json", "html", "csv"  [array] [default: ["html"]]
++  --output       Reporter for the results, supports multiple values. choices: "json", "html", "csv", "markdown"  [array] [default: ["html"]]
+   --output-path  The file path to output the results. Use 'stdout' to write to stdout.
+                    If using JSON output, default is stdout.
+                    If using HTML or CSV output, default is a file in the working directory with a name based on the test URL and date.
+diff --git a/report/generator/report-generator.js b/report/generator/report-generator.js
+index 82ac68f94..8fc57d8a5 100644
+--- a/report/generator/report-generator.js
++++ b/report/generator/report-generator.js
+@@ -77,6 +77,111 @@ class ReportGenerator {
+     ]);
+   }
+ 
++  /**
++   * Converts the results to a Markdown formatted string
++   * Creates a comprehensive Markdown report with categories, scores, and audit details
++   *
++   * @param {LHResult} lhr
++   * @return {string}
++   */
++  static generateReportMarkdown(lhr) {
++    const lines = [];
++
++    // Header
++    lines.push('# Lighthouse Report');
++    lines.push('');
++    lines.push(`**URL:** ${lhr.finalDisplayedUrl}`);
++    lines.push(`**Date:** ${new Date(lhr.fetchTime).toLocaleString()}`);
++    lines.push(`**Lighthouse Version:** ${lhr.lighthouseVersion}`);
++    lines.push('');
++
++    // Categories overview
++    lines.push('## Categories');
++    lines.push('');
++    lines.push('| Category | Score |');
++    lines.push('|----------|-------|');
++
++    for (const category of Object.values(lhr.categories)) {
++      const score = category.score !== null ? Math.round(category.score * 100) : 'N/A';
++      const scoreDisplay = category.score !== null ? `${score}/100` : 'N/A';
++      lines.push(`| ${category.title} | ${scoreDisplay} |`);
++    }
++    lines.push('');
++
++    // Detailed categories
++    for (const category of Object.values(lhr.categories)) {
++      lines.push(`## ${category.title}`);
++      lines.push('');
++      if (category.score !== null) {
++        const score = Math.round(category.score * 100);
++        lines.push(`**Score:** ${score}/100`);
++        lines.push('');
++      }
++
++      if (category.description) {
++        lines.push(category.description);
++        lines.push('');
++      }
++
++      // Audits in this category
++      lines.push('### Audits');
++      lines.push('');
++      lines.push('| Audit | Score | Display Value |');
++      lines.push('|-------|-------|---------------|');
++
++      for (const auditRef of category.auditRefs) {
++        const audit = lhr.audits[auditRef.id];
++        if (!audit) continue;
++
++        let score;
++        if (audit.score === null) {
++          score = 'N/A';
++        } else if (audit.scoreDisplayMode === 'informative') {
++          score = 'ℹ️';
++        } else if (audit.score === 1) {
++          score = '✅';
++        } else if (audit.score === 0) {
++          score = '❌';
++        } else {
++          // Для числовых score от 0 до 1, показываем процент
++          score = `${Math.round(audit.score * 100)}`;
++        }
++
++        const displayValue = audit.displayValue || '';
++
++        lines.push(`| ${audit.title} | ${score} | ${displayValue} |`);
++      }
++      lines.push('');
++    }
++
++    // Runtime errors and warnings
++    if (lhr.runWarnings && lhr.runWarnings.length > 0) {
++      lines.push('## Warnings');
++      lines.push('');
++      for (const warning of lhr.runWarnings) {
++        lines.push(`- ⚠️ ${warning}`);
++      }
++      lines.push('');
++    }
++
++    if (lhr.runtimeError) {
++      lines.push('## Runtime Error');
++      lines.push('');
++      lines.push(`**Code:** ${lhr.runtimeError.code}`);
++      lines.push(`**Message:** ${lhr.runtimeError.message}`);
++      if (lhr.runtimeError.errorStack) {
++        lines.push('');
++        lines.push('**Stack Trace:**');
++        lines.push('```');
++        lines.push(lhr.runtimeError.errorStack);
++        lines.push('```');
++      }
++      lines.push('');
++    }
++
++    return lines.join('\n');
++  }
++
+   /**
+    * Converts the results to a CSV formatted string
+    * Each row describes the result of 1 audit with
+@@ -183,6 +288,13 @@ class ReportGenerator {
+       if (outputMode === 'json') {
+         return JSON.stringify(result, null, 2);
+       }
++      // Markdown report.
++      if (outputMode === 'markdown') {
++        if (ReportGenerator.isFlowResult(result)) {
++          throw new Error('Markdown output is not supported for user flows');
++        }
++        return ReportGenerator.generateReportMarkdown(result);
++      }
+ 
+       throw new Error('Invalid output mode: ' + outputMode);
+     });
+-- 
+2.50.1 (Apple Git-155)
+
