@@ -2,6 +2,16 @@
  * Elite Visual Integrity Auditor™ - COMPLETE EDITION
  * Forensic-grade text visibility analysis by a master with 50,000 UX/UI/CSS books
  * 
+ const result = auditVisualIntegrity();
+
+ * // Копировать batch 2
+ * result.copy(2);
+
+ * // Копировать все
+ * result.copyAll();
+
+ * // Подсветить
+ * result.highlight();
  * @author The CSS Whisperer
  * @version 3.1.0-complete
  */
