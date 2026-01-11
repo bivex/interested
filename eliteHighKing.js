@@ -1,10 +1,9 @@
 /**
- * Elite Visual Integrity Auditor™
- * Forensic-grade text visibility analysis by a master with 50,000 UX/UI/CSS books consumed
- * Detects critical rendering failures that compromise user experience and accessibility
+ * Elite Visual Integrity Auditor™ - COMPLETE EDITION
+ * Forensic-grade text visibility analysis by a master with 50,000 UX/UI/CSS books
  * 
  * @author The CSS Whisperer
- * @version 3.0.1-masterclass-fixed
+ * @version 3.1.0-complete
  */
 (function auditVisualIntegrity(options) {
   'use strict';
@@ -19,13 +18,14 @@
     semanticValidation: true,
     criticalOverflowThreshold: 50,
     criticalOverflowPercent: 30,
+    batchSize: 100,
     outputMarkdown: true,
     expertiseLevel: 'master',
     ...options
   };
 
   // ============================================================================
-  // EXPERT KNOWLEDGE BASE
+  // EXPERT KNOWLEDGE BASE - 50,000 books condensed
   // ============================================================================
   
   const EXPERT_KNOWLEDGE = {
@@ -144,10 +144,8 @@
   // MASTER-LEVEL UTILITIES
   // ============================================================================
   
-  function getSelectorPath(element, useOptimalStrategy) {
+  function getSelectorPath(element) {
     if (!element) return 'unknown';
-    
-    useOptimalStrategy = useOptimalStrategy !== false;
     
     if (element.getAttribute && element.getAttribute('aria-label')) {
       return '[aria-label="' + element.getAttribute('aria-label') + '"]';
@@ -203,7 +201,16 @@
   }
   
   function analyzeLayoutContext(element) {
-    if (!element) return null;
+    if (!element) return {
+      layoutMethod: 'unknown',
+      isFlexChild: false,
+      isGridChild: false,
+      hasContainment: false,
+      stackingContext: false,
+      flowContext: 'unknown',
+      writingMode: 'horizontal-tb',
+      direction: 'ltr'
+    };
     
     const parent = element.parentElement;
     if (!parent) return {
@@ -289,7 +296,6 @@
     if (!element) return [];
     
     const violations = [];
-    const role = element.getAttribute ? element.getAttribute('role') : null;
     const ariaHidden = element.getAttribute ? element.getAttribute('aria-hidden') : null;
     const tabIndex = element.tabIndex || -1;
     
@@ -324,7 +330,7 @@
   }
 
   // ============================================================================
-  // MASTER-LEVEL DETECTION ENGINE
+  // DETECTION ENGINE
   // ============================================================================
   
   const criticalIssues = [];
@@ -358,10 +364,7 @@
     const issues = [];
     let visibilityState = 'visible';
     
-    // ========================================================================
-    // PHASE 1: ANTI-PATTERN DETECTION
-    // ========================================================================
-    
+    // Anti-pattern detection
     Object.entries(EXPERT_KNOWLEDGE.antiPatterns).forEach(([patternName, pattern]) => {
       try {
         const detected = pattern.detection(element, styles);
@@ -385,14 +388,11 @@
           }
         }
       } catch (e) {
-        // Skip this pattern if detection fails
+        // Skip failed detection
       }
     });
     
-    // ========================================================================
-    // PHASE 2: FUNDAMENTAL VISIBILITY FAILURES
-    // ========================================================================
-    
+    // Fundamental visibility failures
     if (styles.display === 'none') {
       issues.push({
         type: 'DISPLAY_NONE',
@@ -435,7 +435,7 @@
         visualWeight: visualWeight,
         fix: 'opacity: 1; /* Or remove if truly hidden */',
         context: isTransitioning ? 
-          'Transition detected - ensure duration < 400ms for perceived performance' :
+          'Transition detected - ensure duration < 400ms' :
           'Consider: Should this use display:none instead?'
       });
       if (!isTransitioning) {
@@ -452,23 +452,20 @@
         category: 'Layout',
         severity: 'critical',
         reason: isCollapsed ?
-          'Element fully collapsed - likely Flexbox/Grid shrinkage or missing content box' :
+          'Element fully collapsed - likely Flexbox/Grid shrinkage' :
           (rect.width === 0 ? 'Zero width' : 'Zero height') + ' - breaks reading flow',
         dimensions: { width: rect.width, height: rect.height },
         layoutContext: layoutContext,
         fix: layoutContext && layoutContext.isFlexChild ?
           'flex-shrink: 0; min-width: fit-content;' :
           'width: auto; min-width: fit-content;',
-        context: 'Common in: Flex containers without flex-basis, CSS Grid auto-fit with insufficient space'
+        context: 'Common in: Flex containers without flex-basis, Grid auto-fit with insufficient space'
       });
       visibilityState = isCollapsed ? 'zero-dimensions' : 'zero-dimension';
       stats.completelyHidden++;
     }
     
-    // ========================================================================
-    // PHASE 3: OVERFLOW ANALYSIS
-    // ========================================================================
-    
+    // Overflow analysis
     const overflowAnalysis = analyzeOverflow(element, styles, layoutContext);
     if (overflowAnalysis && overflowAnalysis.critical) {
       issues.push({
@@ -484,10 +481,7 @@
       stats.criticalOverflow++;
     }
     
-    // ========================================================================
-    // PHASE 4: ACCESSIBILITY
-    // ========================================================================
-    
+    // Accessibility
     if (config.wcagCompliance) {
       const a11yViolations = detectAccessibilityViolations(element, visibilityState);
       a11yViolations.forEach(violation => {
@@ -505,10 +499,7 @@
       });
     }
     
-    // ========================================================================
-    // STORE ISSUES
-    // ========================================================================
-    
+    // Store issues
     if (issues.length > 0) {
       const hasCritical = issues.some(i => 
         i.severity === 'critical' || 
@@ -610,26 +601,29 @@
   function getFix(direction, styles, layoutContext) {
     if (!styles || !layoutContext) return 'overflow: auto;';
     
-    let fix = '/* Master-level fix */\n';
+    let fix = '';
     
     if (direction === 'horizontal') {
       if (styles.whiteSpace === 'nowrap') {
-        fix += 'white-space: normal;\noverflow-wrap: break-word;';
+        fix = 'white-space: normal;\n  overflow-wrap: break-word;';
       } else if (layoutContext.isFlexChild) {
-        fix += 'min-width: 0;\noverflow-wrap: break-word;';
+        fix = 'min-width: 0;\n  overflow-wrap: break-word;';
       } else {
-        fix += 'max-width: 100%;\noverflow-wrap: break-word;';
+        fix = 'max-width: 100%;\n  overflow-wrap: break-word;';
       }
     } else {
-      fix += 'overflow-y: auto;\nmax-height: 80vh;';
+      fix = 'overflow-y: auto;\n  max-height: 80vh;';
     }
     
     return fix;
   }
   
   function getOverflowContext(element, styles, layoutContext) {
-    if (!layoutContext) return 'Unknown layout context';
-    return 'Layout: ' + layoutContext.layoutMethod;
+    if (!layoutContext) return 'Unknown layout';
+    let context = 'Layout: ' + layoutContext.layoutMethod;
+    if (layoutContext.isFlexChild) context += ' (Flex child)';
+    if (layoutContext.isGridChild) context += ' (Grid child)';
+    return context;
   }
   
   function getA11yFix(violation) {
@@ -662,7 +656,7 @@
     
     score *= (visualWeight / 100);
     
-    return Math.round(score);
+    return Math.round(Math.max(1, score));
   }
 
   // ============================================================================
@@ -678,110 +672,278 @@
   
   console.log('🎓 Elite Visual Integrity Audit initiated...');
   console.log('📚 Applying knowledge from 50,000 UX/UI/CSS books...');
+  console.log('🔍 Scanning ' + elements.length + ' elements...');
   
   elements.forEach(masterAnalyzeElement);
   
+  // STRICT SORT BY CRITICALITY SCORE (highest first)
   criticalIssues.sort((a, b) => b.criticalityScore - a.criticalityScore);
+  
+  console.log('✅ Analysis complete: ' + stats.totalCritical + ' critical issues found');
 
   // ============================================================================
-  // MARKDOWN REPORT
+  // MARKDOWN REPORT GENERATOR - BATCHED BY 100
   // ============================================================================
   
-  function generateMasterReport() {
-    let md = '# 🎓 Elite Visual Integrity Audit Report\n\n';
-    md += '> *Analysis by a master with 50,000 books of UX/UI/CSS expertise*\n\n';
-    md += '**Website:** `' + window.location.hostname + '`\n';
-    md += '**Date:** ' + new Date().toISOString() + '\n\n';
+  function generateBatchedReport() {
+    const batches = [];
+    const batchSize = config.batchSize;
     
-    md += '## 📊 Summary\n\n';
-    md += '| Metric | Count |\n';
-    md += '|--------|-------|\n';
-    md += '| **Critical Issues** | **' + stats.totalCritical + '** |\n';
-    md += '| Hidden Elements | ' + stats.completelyHidden + ' |\n';
-    md += '| Critical Overflow | ' + stats.criticalOverflow + ' |\n';
-    md += '| Anti-Patterns | ' + stats.antiPatterns + ' |\n';
-    md += '| WCAG Violations | ' + stats.accessibilityViolations + ' |\n\n';
-    
-    if (criticalIssues.length === 0) {
-      md += '## ✅ Excellent!\n\nNo critical issues found.\n';
-      return md;
+    for (let i = 0; i < criticalIssues.length; i += batchSize) {
+      const batch = criticalIssues.slice(i, i + batchSize);
+      const batchNumber = Math.floor(i / batchSize) + 1;
+      const totalBatches = Math.ceil(criticalIssues.length / batchSize);
+      
+      let md = '# 🎓 Elite Visual Integrity Audit - Batch ' + batchNumber + '/' + totalBatches + '\n\n';
+      md += '> *Analysis by master with 50,000 books of UX/UI/CSS expertise*\n\n';
+      md += '**Website:** `' + window.location.hostname + '`\n';
+      md += '**Date:** ' + new Date().toISOString() + '\n';
+      md += '**Batch:** Issues #' + (i + 1) + ' - #' + Math.min(i + batchSize, criticalIssues.length) + ' of ' + criticalIssues.length + '\n\n';
+      
+      if (batchNumber === 1) {
+        md += '---\n\n';
+        md += '## 📊 Executive Summary (All Batches)\n\n';
+        md += '| Metric | Count | Severity |\n';
+        md += '|--------|-------|----------|\n';
+        md += '| **Total Critical Issues** | **' + stats.totalCritical + '** | 🔴 IMMEDIATE ACTION |\n';
+        md += '| Completely Hidden | ' + stats.completelyHidden + ' | 🔴 Critical |\n';
+        md += '| Critical Overflow | ' + stats.criticalOverflow + ' | 🔴 Critical |\n';
+        md += '| Anti-Patterns | ' + stats.antiPatterns + ' | 🟠 Architecture Debt |\n';
+        md += '| WCAG Violations | ' + stats.accessibilityViolations + ' | ⚖️ Legal Risk |\n';
+        md += '| Performance Issues | ' + stats.performanceIssues + ' | ⚡ Optimization |\n\n';
+        
+        md += '### Impact Metrics\n\n';
+        md += '- **Visual Weight Lost:** ' + Math.round(stats.visualWeightLost) + ' units\n';
+        md += '- **Elements Scanned:** ' + stats.totalElements + ' total, ' + stats.textElements + ' text-bearing\n';
+        md += '- **Average Criticality:** ' + (criticalIssues.length > 0 ? 
+          Math.round(criticalIssues.reduce((sum, i) => sum + i.criticalityScore, 0) / criticalIssues.length) : 0) + '/100\n';
+        md += '- **Highest Score:** ' + (criticalIssues.length > 0 ? criticalIssues[0].criticalityScore : 0) + '/100\n\n';
+      }
+      
+      md += '---\n\n';
+      md += '## 🔴 Critical Issues (Sorted by Criticality Score)\n\n';
+      
+      batch.forEach((issue, batchIndex) => {
+        const globalIndex = i + batchIndex + 1;
+        
+        md += '### Issue #' + globalIndex + ' - Score: ' + issue.criticalityScore + '/100\n\n';
+        md += '**Selector:** `' + issue.selector + '`\n';
+        md += '**Element:** `<' + issue.tag + '>`\n';
+        md += '**State:** `' + issue.visibilityState + '`\n';
+        md += '**Visual Weight:** ' + issue.visualWeight + ' units\n\n';
+        
+        md += '**Content Preview:**\n';
+        md += '> "' + issue.text + '..."\n\n';
+        
+        md += '**Layout Context:**\n';
+        md += '- Method: ' + issue.layoutContext.layoutMethod + '\n';
+        md += '- Flow: ' + issue.layoutContext.flowContext + '\n';
+        if (issue.layoutContext.isFlexChild) md += '- ⚠️ Flex child (overflow risk)\n';
+        if (issue.layoutContext.isGridChild) md += '- ⚠️ Grid child (constraint check)\n';
+        md += '\n';
+        
+        md += '**Dimensions:**\n';
+        md += '- Visible: ' + issue.dimensions.width + 'px × ' + issue.dimensions.height + 'px\n';
+        if (issue.dimensions.scrollWidth > issue.dimensions.width) {
+          md += '- Scroll Width: ' + issue.dimensions.scrollWidth + 'px (⚠️ +' + 
+                (issue.dimensions.scrollWidth - issue.dimensions.width) + 'px overflow)\n';
+        }
+        if (issue.dimensions.scrollHeight > issue.dimensions.height) {
+          md += '- Scroll Height: ' + issue.dimensions.scrollHeight + 'px (⚠️ +' + 
+                (issue.dimensions.scrollHeight - issue.dimensions.height) + 'px overflow)\n';
+        }
+        md += '\n';
+        
+        const grouped = {};
+        issue.issues.forEach(iss => {
+          if (!grouped[iss.category]) grouped[iss.category] = [];
+          grouped[iss.category].push(iss);
+        });
+        
+        md += '**Detected Problems:**\n\n';
+        
+        Object.entries(grouped).forEach(([category, categoryIssues]) => {
+          md += '#### ' + category + '\n\n';
+          
+          categoryIssues.forEach(iss => {
+            const icon = iss.severity === 'critical' || (typeof iss.severity === 'string' && iss.severity.includes('failure')) ? '🔴' : 
+                        iss.severity === 'serious' ? '🟠' : '🟡';
+            
+            md += icon + ' **' + iss.reason + '**\n\n';
+            
+            if (iss.wcagViolation) md += '- WCAG: ' + iss.wcagViolation + '\n';
+            if (iss.wcag) md += '- Standard: ' + iss.wcag + ' (Level ' + iss.level + ')\n';
+            if (iss.pattern) md += '- Anti-Pattern: `' + iss.pattern + '`\n';
+            if (iss.overflow) md += '- Overflow: ' + iss.overflow + '\n';
+            if (iss.affectedContent) md += '- Affected: ' + iss.affectedContent + '\n';
+            if (iss.context) md += '- Context: ' + iss.context + '\n';
+            
+            md += '\n';
+          });
+        });
+        
+        md += '**Master-Level Fix:**\n\n';
+        md += '```css\n';
+        md += '/* Priority: IMMEDIATE (Score: ' + issue.criticalityScore + '/100) */\n';
+        md += issue.selector + ' {\n';
+        
+        issue.issues.forEach((iss, idx) => {
+          if (idx > 0) md += '\n';
+          md += '  /* Fix: ' + iss.reason + ' */\n';
+          md += '  ' + iss.fix.split('\n').join('\n  ') + '\n';
+        });
+        
+        md += '}\n```\n\n';
+        
+        md += '---\n\n';
+      });
+      
+      if (batchNumber === totalBatches) {
+        md += '## 📋 Action Plan\n\n';
+        md += '### Immediate (Today)\n\n';
+        const top10 = criticalIssues.slice(0, 10);
+        top10.forEach((issue, idx) => {
+          md += (idx + 1) + '. **' + issue.selector + '** (Score: ' + issue.criticalityScore + ')\n';
+        });
+        md += '\n';
+        
+        md += '### Short-term (This Week)\n\n';
+        md += '1. Fix all issues with score ≥ 50\n';
+        md += '2. Establish overflow management standards\n';
+        md += '3. Document anti-patterns to avoid\n\n';
+        
+        md += '### Long-term (This Quarter)\n\n';
+        md += '1. Implement design system improvements\n';
+        md += '2. Add automated visual regression tests\n';
+        md += '3. Team training on modern CSS layout\n\n';
+        
+        md += '---\n\n';
+        md += '*Audit powered by 50,000 books of UX/UI/CSS wisdom*\n';
+        md += '*Generated: ' + new Date().toLocaleString() + '*\n';
+      }
+      
+      batches.push({
+        markdown: md,
+        batchNumber: batchNumber,
+        totalBatches: totalBatches,
+        startIndex: i,
+        endIndex: Math.min(i + batchSize, criticalIssues.length) - 1
+      });
     }
     
-    md += '## 🔴 Critical Issues\n\n';
-    
-    criticalIssues.forEach((issue, index) => {
-      md += '### #' + (index + 1) + ': `' + issue.selector + '`\n\n';
-      md += '**Score:** ' + issue.criticalityScore + '/100\n';
-      md += '**Text:** "' + issue.text + '..."\n\n';
-      
-      md += '**Problems:**\n';
-      issue.issues.forEach(i => {
-        md += '- 🔴 ' + i.reason + '\n';
-      });
-      
-      md += '\n**Fix:**\n```css\n';
-      md += issue.selector + ' {\n';
-      issue.issues.forEach(i => {
-        md += '  ' + i.fix.split('\n').join('\n  ') + '\n';
-      });
-      md += '}\n```\n\n---\n\n';
-    });
-    
-    return md;
+    return batches;
   }
 
   // ============================================================================
-  // OUTPUT
+  // OUTPUT & CLIPBOARD
   // ============================================================================
-  
-  const markdown = generateMasterReport();
   
   function smartCopy(text) {
     if (document.hasFocus()) {
       return navigator.clipboard.writeText(text)
         .then(() => {
-          console.log('📋 Report copied!');
+          console.log('📋 Batch copied to clipboard!');
           return true;
         })
         .catch(() => {
-          console.warn('⚠️ Copy failed');
+          console.warn('⚠️ Copy failed - click page first');
           return false;
         });
     } else {
-      console.warn('⚠️ Click page first');
+      console.warn('⚠️ Document not focused - click page then run result.copy()');
       return Promise.resolve(false);
     }
   }
   
-  console.group('🎓 Audit Complete');
-  console.log('Critical issues:', stats.totalCritical);
-  console.log('Hidden:', stats.completelyHidden);
-  console.log('Overflow:', stats.criticalOverflow);
-  console.log('Anti-patterns:', stats.antiPatterns);
+  const batches = criticalIssues.length > 0 ? generateBatchedReport() : [];
+  
+  console.group('🎓 Elite Audit Complete');
+  console.log('%c' + stats.totalCritical + ' CRITICAL ISSUES', 
+    'font-size: 16px; font-weight: bold; color: ' + (stats.totalCritical > 0 ? 'red' : 'green'));
+  console.log('');
+  console.log('Breakdown:');
+  console.log('  Hidden: ' + stats.completelyHidden);
+  console.log('  Overflow: ' + stats.criticalOverflow);
+  console.log('  Anti-patterns: ' + stats.antiPatterns);
+  console.log('  WCAG violations: ' + stats.accessibilityViolations);
+  console.log('');
+  console.log('Reports: ' + batches.length + ' batch(es) of ' + config.batchSize + ' issues');
   console.groupEnd();
   
   const results = {
     critical: criticalIssues,
     stats: stats,
-    markdown: markdown,
-    copy: () => smartCopy(markdown),
+    batches: batches,
+    
+    copy: function(batchNumber) {
+      batchNumber = batchNumber || 1;
+      if (batches.length === 0) {
+        console.log('✅ No issues to copy!');
+        return Promise.resolve(false);
+      }
+      if (batchNumber < 1 || batchNumber > batches.length) {
+        console.error('❌ Invalid batch number. Use 1-' + batches.length);
+        return Promise.resolve(false);
+      }
+      const batch = batches[batchNumber - 1];
+      console.log('📋 Copying batch ' + batchNumber + '/' + batches.length + '...');
+      return smartCopy(batch.markdown);
+    },
+    
+    copyAll: function() {
+      if (batches.length === 0) {
+        console.log('✅ No issues to copy!');
+        return Promise.resolve(false);
+      }
+      const allMarkdown = batches.map(b => b.markdown).join('\n\n' + '='.repeat(80) + '\n\n');
+      console.log('📋 Copying all ' + batches.length + ' batches...');
+      return smartCopy(allMarkdown);
+    },
+    
     highlight: function() {
       criticalIssues.forEach(issue => {
-        issue.element.style.outline = '5px solid red';
+        const color = issue.criticalityScore >= 70 ? 'darkred' : 
+                     issue.criticalityScore >= 40 ? 'red' : 'orange';
+        issue.element.style.outline = '5px solid ' + color;
         issue.element.style.outlineOffset = '3px';
+        issue.element.style.zIndex = '99999';
+        issue.element.title = '🔴 Score: ' + issue.criticalityScore + '/100';
       });
       console.log('🎨 Highlighted ' + criticalIssues.length + ' elements');
     },
+    
     removeHighlight: function() {
-      criticalIssues.forEach(i => {
-        i.element.style.outline = '';
-        i.element.style.outlineOffset = '';
+      criticalIssues.forEach(issue => {
+        issue.element.style.outline = '';
+        issue.element.style.outlineOffset = '';
+        issue.element.style.zIndex = '';
+        issue.element.title = '';
       });
+      console.log('✅ Highlights removed');
+    },
+    
+    showBatch: function(batchNumber) {
+      batchNumber = batchNumber || 1;
+      if (batches.length === 0) return;
+      if (batchNumber < 1 || batchNumber > batches.length) {
+        console.error('❌ Invalid batch. Use 1-' + batches.length);
+        return;
+      }
+      console.log(batches[batchNumber - 1].markdown);
     }
   };
   
-  if (criticalIssues.length > 0) {
-    smartCopy(markdown);
+  // Auto-copy first batch if issues found
+  if (batches.length > 0) {
+    smartCopy(batches[0].markdown);
+    console.log('');
+    console.log('📋 First batch auto-copied!');
+    if (batches.length > 1) {
+      console.log('💡 Copy more batches: result.copy(2), result.copy(3), etc.');
+      console.log('💡 Copy all: result.copyAll()');
+    }
+  } else {
+    console.log('✅ Perfect! No critical issues found.');
   }
   
   return results;
