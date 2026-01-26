@@ -1,3 +1,6 @@
+Based on 3 act narrative storytelling make index for 350 pages of game. Game about magic, guild and dark fantasy. Dark magic, and conflicts.
+
+
 **Table of Contents – 350‑Page Dark‑Fantasy Game Narrative**  
 *(Three‑Act Structure: Setup → Conflict → Resolution)*  
 
