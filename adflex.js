@@ -62,3 +62,89 @@
     .catch(() => console.warn('⚠️ Clipboard blocked. Run: copy(window.__adflexOffers)'));
   return window.__adflexOffers;
 })();
+
+
+
+//for Meta
+(function extractAdFlexMetaOffers() {
+  if (!window.__adflexOffers) window.__adflexOffers = [];
+  const cards = Array.from(
+    document.querySelectorAll('[class*="flexad-card"]')
+  ).filter(card => card.querySelector('.bg-gray-100'));
+  function extractOffer(card) {
+    // ── Header ───────────────────────────────────────────────
+    const advertiser = card.querySelector('span[class*="group-hover"]')?.textContent?.trim() ?? '';
+    const date       = card.querySelector('[class*="text-gray-600"]')?.textContent?.trim()   ?? '';
+    const status     = card.querySelector('span[class*="bg-green"], span[class*="bg-red"], span[class*="bg-gray"]')
+                           ?.parentElement?.textContent?.trim() ?? '';
+    // ── Ad content (div.truncate order: body → headline → rating) ──
+    const truncDivs = Array.from(card.querySelectorAll('div.truncate'));
+    const adText   = truncDivs[0]?.textContent?.trim() ?? '';
+    const headline = truncDivs[1]?.textContent?.trim() ?? '';
+    const rating   = truncDivs[2]?.textContent?.trim() ?? '';
+    const domain   = card.querySelector('[class*="truncate w-"]')?.textContent?.trim() ?? '';
+    // ── Info list rows ────────────────────────────────────────
+    const infoRows = card.querySelectorAll('.bg-gray-100 > div');
+    const info = {};
+    infoRows.forEach(row => {
+      const label = row.querySelector(':scope > div:first-child')?.textContent?.trim();
+      const valEl = row.querySelector(':scope > div:last-child');
+      if (label === 'Platform') {
+        // Extract platform names from sprite class  e.g. platforms-meta-facebook
+        const spans = valEl?.querySelectorAll('span[class*="platforms-meta"]');
+        info[label] = Array.from(spans ?? [])
+          .map(s => s.className.match(/platforms-meta-(\\w+)/)?.[1])
+          .filter(Boolean).join(', ');
+      } else if (label === 'Region') {
+        // Flag sprites → country codes + overflow badge e.g. "+6"
+        const flags = valEl?.querySelectorAll('[class*="sprite-flag"]');
+        const extra = valEl?.querySelector('[class*="bg-white"]')?.textContent?.trim() ?? '';
+        const codes = Array.from(flags ?? [])
+          .map(f => f.className.match(/sprite-flag-([a-z]+)/)?.[1]?.toUpperCase())
+          .filter(Boolean);
+        if (extra) codes.push(extra);
+        info[label] = codes.join(', ');
+      } else if (label) {
+        info[label] = valEl?.textContent?.trim() ?? '';
+      }
+    });
+    return {
+      advertiser,
+      date,
+      status,
+      adText,
+      headline,
+      rating,
+      domain,
+      platforms:   info['Platform']     ?? '',
+      region:      info['Region']       ?? '',
+      daysRunning: info['Days Running'] ?? '',
+    };
+  }
+  // De-duplicate by advertiser + date + headline
+  const existingKeys = new Set(
+    window.__adflexOffers.map(o => `${o.advertiser}|${o.date}|${o.headline}`)
+  );
+  const newOffers = cards
+    .map(extractOffer)
+    .filter(o => {
+      const key = `${o.advertiser}|${o.date}|${o.headline}`;
+      if (existingKeys.has(key)) return false;
+      existingKeys.add(key);
+      return true;
+    });
+  window.__adflexOffers.push(...newOffers);
+  // ── Output ───────────────────────────────────────────────
+  console.log(`✅ +${newOffers.length} new | 📦 Total: ${window.__adflexOffers.length} offers`);
+  console.table(newOffers);
+  // Copy all to clipboard
+  try {
+    copy(window.__adflexOffers);
+    console.log(`📋 ALL ${window.__adflexOffers.length} offers copied to clipboard!`);
+  } catch (e) {
+    navigator.clipboard.writeText(JSON.stringify(window.__adflexOffers, null, 2))
+      .then(() => console.log(`📋 ALL ${window.__adflexOffers.length} offers copied!`))
+      .catch(() => console.warn('⚠️ Run manually: copy(window.__adflexOffers)'));
+  }
+  return window.__adflexOffers;
+})();
