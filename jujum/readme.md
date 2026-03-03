@@ -259,3 +259,70 @@ class ParameterCache {
 > 💡 **Важно**: VST3 параметры идентифицируются по **ParamID** (32-bit unique identifier), а не по индексу [[84]]. Хост использует этот ID для маппинга автоматизации [[3]].
 
 Нужна помощь с созданием конкретного маппинга для Serum или другого плагина?
+
+
+  📋 Полное резюме VST3 getParameterInfo() API                                                              
+                                                                                                          
+  1. Структура ParameterInfo (из VST3 SDK):                                                                 
+                                                                                                            
+  struct ParameterInfo {                                                                                    
+      ParamID id;                  // уникальный ID параметра (int32)                                       
+      String128 title;             // название ("Cutoff", "Resonance")                                      
+      String128 shortTitle;        // короткое ("Cut", "Res")
+      String128 units;             // единицы ("Hz", "dB", "%", "ms")
+      int32 stepCount;             // 0=continuous, 1=toggle, >1=discrete
+      ParamValue defaultNormalizedValue; // дефолт [0,1]
+      UnitID unitId;               // ID группы параметров
+      int32 flags;                 // флаги поведения
+  };
+
+  2. Паттерн чтения параметров (JUCE way):
+
+  // Шаг 1: Получить количество параметров
+  int32 count = editController->getParameterCount();
+
+  // Шаг 2: Итерироваться по индексам и получать инфу
+  for (int32 i = 0; i < count; ++i) {
+      Vst::ParameterInfo info{};
+      editController->getParameterInfo(i, info);
+
+      // Используем метаданные:
+      // - info.id → уникальный ID
+      // - info.title → "Filter Cutoff"
+      // - info.units → "Hz"
+      // - info.flags → проверить на kIsHidden, kCanAutomate
+  }
+
+  3. Ключевые флаги для фильтрации:
+
+  ┌──────────────┬─────────┬──────────────────────────┐
+  │     Флаг     │   Бит   │         Описание         │
+  ├──────────────┼─────────┼──────────────────────────┤
+  │ kCanAutomate │ 1 << 0  │ Можно автоматизировать   │
+  ├──────────────┼─────────┼──────────────────────────┤
+  │ kIsReadOnly  │ 1 << 1  │ Только чтение            │
+  ├──────────────┼─────────┼──────────────────────────┤
+  │ kIsHidden    │ 1 << 4  │ Скрыт из UI - отсеиваем! │
+  ├──────────────┼─────────┼──────────────────────────┤
+  │ kIsBypass    │ 1 << 16 │ Bypass - отсеиваем!      │
+  └──────────────┴─────────┴──────────────────────────┘
+
+  4. Пример кода для Whitelist фильтрации:
+
+  // Из JUCE: initialiseParameterList() строка 3124-3130
+  for (int i = 0; i < editController->getParameterCount(); ++i) {
+      Vst::ParameterInfo info{};
+      editController->getParameterInfo(i, info);
+
+      // Пропускаем bypass и скрытые параметры
+      if (info.flags & Vst::ParameterInfo::kIsBypass)
+          continue;
+      if (info.flags & Vst::ParameterInfo::kIsHidden)
+          continue;
+
+      // Теперь info содержит:
+      // - info.id = 104
+      // - info.title = "Filter Cutoff"
+      // - info.units = "Hz"
+      // - info.stepCount = 0 (continuous)
+  }
