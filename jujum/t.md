@@ -204,3 +204,198 @@ void getParams(Steinberg::VST::IEditController* controller)
 
 ### Recommendation
 If you want to build a tool to manage or read VSTs, **use JUCE**. It saves you weeks of work handling the differences between Windows DLLs, macOS Bundles, and parameter normalization.
+
+To set parameter values on a VST plugin in C++, you interact with the `AudioProcessorParameter` object (in JUCE) or the `IEditController` interface (in raw VST3 SDK).
+
+**Crucial Rule:** VST parameters expect **normalized values** between `0.0` and `1.0`. You cannot directly set "1000 Hz"; you must calculate what `0.0–1.0` value represents 1000 Hz for that specific plugin.
+
+Here are the methods for **JUCE** (Recommended) and **Raw VST3 SDK**.
+
+---
+
+### Method 1: Using JUCE Framework (Recommended)
+
+JUCE handles the communication with the plugin binary. You primarily use the `setValueNotifyingHost` method to ensure the plugin's UI updates correctly.
+
+#### Basic Example: Setting a Parameter
+
+```cpp
+// Assuming 'instance' is your loaded AudioPluginInstance*
+// and you want to set parameter at index 0 to 50% (0.5f)
+
+auto* param = instance->getParameters()[0];
+
+// 1. Set the value (0.0f to 1.0f)
+// This notifies the host and updates the plugin UI
+param->setValueNotifyingHost(0.5f); 
+
+// 2. Verify the change
+float currentValue = param->getValue();
+juce::String display = param->getCurrentValueAsText();
+
+DBG("New Value: " << display);
+```
+
+#### Advanced: Setting by Parameter Name
+Since parameter indices can change between presets, it is safer to find parameters by name.
+
+```cpp
+void setParameterByName(juce::AudioPluginInstance* instance, 
+                        const juce::String& paramName, 
+                        float normalizedValue)
+{
+    const auto& params = instance->getParameters();
+    
+    for (auto* param : params)
+    {
+        // Get name (max 64 chars)
+        if (param->getName(64).equalsIgnoreCase(paramName))
+        {
+            // Clamp value between 0.0 and 1.0
+            float safeValue = juce::jlimit(0.0f, 1.0f, normalizedValue);
+            
+            // Set value
+            param->setValueNotifyingHost(safeValue);
+            
+            DBG("Set " << paramName << " to " << safeValue);
+            return;
+        }
+    }
+    
+    DBG("Parameter not found: " << paramName);
+}
+
+// Usage:
+// setParameterByName(instance, "Cutoff", 0.75f);
+```
+
+#### Setting by Parameter ID (Most Robust)
+Parameter IDs are unique identifiers that do not change, unlike indices or sometimes even names.
+
+```cpp
+void setParameterByID(juce::AudioPluginInstance* instance,
+                      int parameterID,
+                      float normalizedValue)
+{
+    const auto& params = instance->getParameters();
+    
+    for (auto* param : params)
+    {
+        if (param->getIndex() == parameterID)
+        {
+            param->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, normalizedValue));
+            return;
+        }
+    }
+}
+```
+
+---
+
+### Method 2: Raw VST3 SDK
+
+If you are not using JUCE, you must use the `IEditController` interface. You need the Parameter ID, not just the index.
+
+```cpp
+#include "public.sdk/source/vst/vsteditor.h"
+#include "public.sdk/source/vst/vstparameters.h"
+
+using namespace Steinberg::VST;
+
+void setVST3Parameter(IEditController* controller, ParamID paramID, float normalizedValue)
+{
+    // 1. Clamp value
+    ParamValue safeValue = std::max(0.0, std::min(1.0, (double)normalizedValue));
+    
+    // 2. Set the parameter
+    // This updates the internal state
+    controller->setParamNormalized(paramID, safeValue);
+    
+    // 3. Notify the plugin UI (Important!)
+    // This tells the plugin to redraw its knobs/displays
+    controller->performEdit(paramID, safeValue);
+}
+
+// Example Usage:
+// setVST3Parameter(controller, 1001, 0.5f); // 1001 is the Parameter ID
+```
+
+---
+
+### Method 3: Converting Real Values to Normalized (0–1)
+
+Plugins rarely accept "Hz" or "dB" directly. You must convert real-world values to the 0–1 range the plugin expects.
+
+**Option A: Ask the Plugin (JUCE)**
+Some parameters support converting from text strings.
+```cpp
+// Attempt to convert "1000 Hz" string to normalized value
+float value = parameter->getValueForText("1000 Hz"); 
+parameter->setValueNotifyingHost(value);
+```
+
+**Option B: Manual Mapping (Linear)**
+If you know the range (e.g., 20Hz to 20000Hz):
+```cpp
+float minHz = 20.0f;
+float maxHz = 20000.0f;
+float targetHz = 1000.0f;
+
+// Linear interpolation
+float normalized = (targetHz - minHz) / (maxHz - minHz);
+parameter->setValueNotifyingHost(normalized);
+```
+
+**Option C: Manual Mapping (Logarithmic/Audio)**
+Audio parameters (like frequency) are often logarithmic. Linear mapping will feel wrong.
+```cpp
+float minHz = 20.0f;
+float maxHz = 20000.0f;
+float targetHz = 1000.0f;
+
+// Logarithmic interpolation
+float normalized = (std::log(targetHz) - std::log(minHz)) / 
+                   (std::log(maxHz) - std::log(minHz));
+                   
+parameter->setValueNotifyingHost(normalized);
+```
+
+---
+
+### Critical Best Practices
+
+#### 1. Thread Safety
+**Never** set parameters from the **Audio Processing Thread**. It can cause clicks, pops, or crashes.
+*   **GUI Thread:** Safe to use `setValueNotifyingHost`.
+*   **Audio Thread:** Use a lock-free queue to send messages to the GUI thread, or use `AudioProcessorParameter::setValue` (which does not notify the host/UI, safer for audio thread but UI won't update).
+
+#### 2. Smoothing / Ramping
+Jumping instantly from 0 to 1 causes clicks. Smooth the change over time.
+```cpp
+// Simple smoothing example
+float currentValue = param->getValue();
+float targetValue = 0.8f;
+float smoothing = 0.1f; // Adjust for speed
+
+// In a timer or render loop:
+currentValue += (targetValue - currentValue) * smoothing;
+param->setValueNotifyingHost(currentValue);
+```
+
+#### 3. Host Notification
+Always use `setValueNotifyingHost(value)` instead of `setValue(value)` when changing parameters from user input.
+*   `setValue`: Changes internal state only.
+*   `setValueNotifyingHost`: Changes state **AND** tells the DAW to record automation/update the UI.
+
+### Summary Checklist
+
+| Task | JUCE Method | Raw VST3 Method |
+| :--- | :--- | :--- |
+| **Set Value** | `param->setValueNotifyingHost(0.5f)` | `controller->setParamNormalized(id, 0.5f)` |
+| **Get Value** | `param->getValue()` | `controller->getParamNormalized(id)` |
+| **Get Name** | `param->getName(64)` | `controller->getParameterInfo(id, info)` |
+| **Notify UI** | Automatic with `setValueNotifyingHost` | `controller->performEdit(id, value)` |
+| **Thread** | GUI / Message Thread | GUI / Main Thread |
+
+### Recommendation
+Use **JUCE**. It handles the complex thread safety and host notification logic for you. Use `setValueNotifyingHost` for all user-driven changes to ensure the DAW and Plugin UI stay in sync.
