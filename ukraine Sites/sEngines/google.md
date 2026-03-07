@@ -85,3 +85,256 @@ After load: XHR calls fire asynchronously
 ```
 
 The bottom line: Google Search is **server-rendered with async widget hydration** — not a classic SPA. The listings and pagination are entirely traditional SSR; the "SPA feel" comes from the fast server responses and minimal page chrome reloading, not client-side routing.
+
+Вот полный разбор — что браузер **шлёт** Google и что Google **отдаёт** в ответ, по каждому типу запроса.
+
+---
+
+## 1. Главный запрос — `GET /search` (загрузка страницы результатов)
+
+### → БРАУЗЕР ШЛЁТ (Request Headers)
+
+```http
+GET /search?q=apple+ipad&num=10&start=0 HTTP/2
+Host: www.google.com
+
+# Стандартные браузерные заголовки:
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7
+Accept-Encoding: gzip, deflate, br, zstd
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)
+            AppleWebKit/537.36 (KHTML, like Gecko)
+            Chrome/145.0.0.0 Safari/537.36
+
+# Sec-Fetch (политика безопасности):
+Sec-Fetch-Site: same-origin
+Sec-Fetch-Mode: navigate
+Sec-Fetch-User: ?1
+Sec-Fetch-Dest: document
+
+# Client Hints (UA) — шлются потому что сервер запросил через Accept-CH:
+Sec-CH-UA: "Not:A-Brand";v="99", "Google Chrome";v="145", "Chromium";v="145"
+Sec-CH-UA-Mobile: ?0
+Sec-CH-UA-Platform: "macOS"
+Sec-CH-UA-Platform-Version: "26.3.0"
+Sec-CH-UA-Arch: "arm"
+Sec-CH-UA-Bitness: "64"
+Sec-CH-UA-Full-Version: "145.0.7632.160"
+Sec-CH-UA-Full-Version-List: "Not:A-Brand";v="99.0.0.0",
+                              "Google Chrome";v="145.0.7632.160",
+                              "Chromium";v="145.0.7632.160"
+Sec-CH-UA-WoW64: ?0
+
+# Network hints:
+Downlink: 10        ← скорость соединения (Mbps)
+RTT: 50             ← задержка (ms)
+
+# Авторизация:
+Cookie: <session cookies>
+```
+
+**URL Query Parameters:**
+
+| Параметр | Значение | Описание |
+|---|---|---|
+| `q` | `apple+ipad` | Поисковый запрос |
+| `num` | `10` | Результатов на странице |
+| `start` | `0`, `10`, `20`… | Смещение (пагинация) |
+| `hl` | `en-UA` | Язык интерфейса |
+| `ei` | `oFOsaY2cH7...` | Event ID (ID сессии запроса) |
+| `sxsrf` | `ANbL-n6D...` | XSS-токен (CSRF-защита) |
+| `biw` / `bih` | `1062` / `782` | Ширина/высота вьюпорта |
+| `dpr` | `2` | Device pixel ratio |
+| `sa` | `N` | Источник навигации |
+| `ved` | `2ahUKEwj...` | Encoded event data (клик-трекинг) |
+
+---
+
+### ← GOOGLE ОТДАЁТ (Response Headers)
+
+```http
+HTTP/2 200 OK
+server: gws                         ← Google Web Server
+
+# Кэширование — страница НИКОГДА не кэшируется:
+cache-control: private, max-age=0
+expires: -1
+
+# Сжатие:
+content-encoding: br                ← Brotli (~107KB → ~451KB uncompressed)
+
+# Безопасность:
+strict-transport-security: max-age=31536000
+x-frame-options: SAMEORIGIN
+x-xss-protection: 0                 ← отключён (заменён на CSP)
+permissions-policy: unload=()
+cross-origin-opener-policy: same-origin-allow-popups
+
+# CSP — защита от инъекций скриптов:
+content-security-policy: object-src 'none';
+  base-uri 'self';
+  script-src 'nonce-Ym2xNI1g...' 'strict-dynamic' 'unsafe-eval'
+             'unsafe-inline' https: http:;
+  report-uri https://csp.withgoogle.com/csp/gws/cdt1
+
+# Запрашивает дополнительные Client Hints на следующие запросы:
+accept-ch: Sec-CH-Prefers-Color-Scheme, Downlink, RTT,
+           Sec-CH-UA-Form-Factors, Sec-CH-UA-Platform,
+           Sec-CH-UA-Platform-Version, Sec-CH-UA-Full-Version,
+           Sec-CH-UA-Arch, Sec-CH-UA-Model, Sec-CH-UA-Bitness,
+           Sec-CH-UA-Full-Version-List, Sec-CH-UA-WoW64
+
+# Мониторинг/репортинг ошибок:
+report-to: {"group":"gws","max_age":2592000,
+            "endpoints":[{"url":"https://csp.withgoogle.com/csp/report-to/gws/cdt1"}]}
+```
+
+**Тело ответа:** полностью рендеренный HTML (~107 KB br → ~451 KB HTML), все результаты внутри.
+
+---
+
+## 2. Автодополнение — `XHR GET /complete/search`
+
+### → БРАУЗЕР ШЛЁТ
+
+```http
+GET /complete/search?q=apple+ipad
+  &cp=0               ← cursor position
+  &client=gws-wiz-serp
+  &xssi=t             ← добавляет )]}' в начало ответа (защита от JSON hijacking)
+  &hl=en-UA
+  &authuser=0
+  &pq=apple+ipad      ← предыдущий запрос
+  &psi=Ilasafr6...    ← session ID
+  &dpr=2
+  &num=10
+  &nolsbt=1
+
+X-Search-Ci-Fi: 1
+X-DoS-Behavior: 5
+```
+
+### ← GOOGLE ОТДАЁТ
+
+```http
+cache-control: no-cache, must-revalidate
+pragma: no-cache
+expires: -1
+x-content-type-options: nosniff
+```
+
+**Тело ответа** (JSON, защищённый `)]}'`):
+```javascript
+)]}'
+[["apple ipad",35,[512,39,650], {"du":"/complete/deleteitems?...","zf":27}],
+ ["apple ipad<b>pro</b>",0,[512,67,650]],
+ ["apple ipad<b>air</b>",0,[512,67,650]],
+ ["apple ipad<b>mini</b>",0,[512,67,650]],
+ ["apple ipad<b>11</b>",0,[512,203]],
+ ...10 подсказок...],
+ {"n":0,"q":"pWw2KL181wCYY3e_..."}
+]
+```
+
+Структура: `[запрос, тип, [флаги], {метаданные}]`. Первый `35` = история поиска пользователя.
+
+---
+
+## 3. Асинхронные виджеты — `XHR GET /async/bgasy`
+
+### → БРАУЗЕР ШЛЁТ
+
+```http
+GET /async/bgasy?
+  ei=oFOsaY2...      ← Event ID страницы
+  &opi=89978449       ← OPI (origin product identifier = Google Search)
+  &yv=3              ← версия протокола
+  &cs=1              ← client state
+  &async=_fmt:jspb   ← формат ответа (JSON Protocol Buffers)
+
+X-Search-Ci-Fi: 1
+X-DoS-Behavior: 5
+X-Same-Domain: 1
+```
+
+### ← GOOGLE ОТДАЁТ
+
+Заголовки ответа такие же как у `/search`. Тело — список виджетов в формате `jspb` (JSON-like protobuf), содержащий HTML-фрагменты для: `duffy3`, `kp_feedback`, `ctxm`, `arc`, `lbsc`, `vpkg` и др.
+
+---
+
+## 4. Телеметрия — `FETCH/XHR POST /log` и `/gen_204`
+
+### → БРАУЗЕР ШЛЁТ
+
+```http
+POST /log?format=json&hasfast=true&authuser=0
+Authorization: SAPISIDHASH <hash>
+X-Goog-AuthUser: 0
+
+# Тело (JSON array — данные о действиях пользователя):
+[[
+  1, null, null, null, null, null, null, null, null, null,
+  [null, null, null, null, "en-UA", null, null, null,
+    [[["Not:A-Brand","99"],["Google Chrome","145"],["Chromium","145"]],
+     0, "macOS", "26.3.0", "arm", "", "145.0.7632.160"],
+    [4, 0]  ← device type
+  ]
+],
+704,  ← log source ID
+[
+  [timestamp, null, null, null, null, null, null, "<ved_data>",
+   null, null, null, null, null, null, -7200, ...]
+]
+]
+```
+
+### ← GOOGLE ОТДАЁТ
+
+```http
+access-control-allow-origin: *
+content-length: 0
+HTTP 200 / 204
+```
+
+---
+
+## 5. Рекламные данные — `XHR POST ogads-pa.clients6.google.com`
+
+```http
+POST /$rpc/google.internal.onegoogle.asyncdata.v1.AsyncDataService/GetAsyncData
+Content-Type: application/json+protobuf
+X-Goog-AuthUser: 0
+Authorization: SAPISIDHASH <hash>
+```
+
+Это gRPC-Web вызов — подгружает данные для рекламного блока (Shopping carousel) асинхронно после загрузки страницы.
+
+---
+
+## Итоговая схема объектов
+
+```
+БРАУЗЕР                              GOOGLE (gws)
+───────────────────────────────────────────────────
+GET /search?q=...&start=N            200 HTML (SSR, br-сжатый)
+  + User-Agent                    ←  + cache-control: private
+  + Accept-CH hints                  + accept-ch: Sec-CH-UA-*
+  + Cookie (session)                 + CSP nonce
+  + Sec-Fetch-*                      + HSTS, X-Frame-Options
+
+XHR GET /complete/search?q=...       200 JSON (XSSI-защита )]}'
+  + client=gws-wiz-serp           ←  + no-cache headers
+  + pq= (prev query)                 + suggestions array
+
+XHR GET /async/bgasy?_fmt=jspb       200 jspb widgets HTML
+  + ei= (event id)                ←  + server: gws
+  + X-Same-Domain: 1
+
+POST /log?format=json                200/204 пустой
+  + Authorization: SAPISIDHASH    ←  + CORS: allow *
+  + body: [[UA, platform, events]]
+
+POST ogads-pa.../GetAsyncData        200 protobuf
+  + Authorization: SAPISIDHASH   ←  + ads data
+```
