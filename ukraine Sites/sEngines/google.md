@@ -338,3 +338,74 @@ POST /log?format=json                200/204 пустой
 POST ogads-pa.../GetAsyncData        200 protobuf
   + Authorization: SAPISIDHASH   ←  + ads data
 ```
+
+Ответ прямой: **ссылки сайтов лежат прямо в HTML-теле ответа на главный GET-запрос** `/search?q=...`. Никаких отдельных API-вызовов для получения ссылок нет.
+
+---
+
+## Где именно в ответе
+
+### В сыром HTML (ответ на `GET /search?q=apple+ipad`)
+
+Google возвращает `<a>` теги с **прямыми href** на сайты — без оберток `/url?q=`:
+
+```html
+<a jsname="UWckNb" class="zReHs" href="https://www.apple.com/ua/ipad/"
+   data-ved="2ahUKEwj6k8Kqno..." ping="/url?sa=t&source=web...">
+  <h3 class="LC20lb">iPad - Apple (UA)</h3>
+</a>
+
+<a jsname="UWckNb" class="zReHs" href="https://jabko.ua/ipad/"
+   data-ved="..." ping="...">
+  <h3>Apple iPad — купити в Ябко від 12 499 грн</h3>
+</a>
+
+<a jsname="UWckNb" class="zReHs" href="https://www.apple.com/ua/ipad-pro/"
+   data-ved="..." ping="...">
+```
+
+---
+
+## Схема атрибутов тега-результата
+
+| Атрибут | Значение | Назначение |
+|---|---|---|
+| `href` | `https://jabko.ua/ipad/` | ✅ **Сам URL сайта** — вот он |
+| `jsname` | `UWckNb` | Идентификатор типа элемента (органика) |
+| `class` | `zReHs` | CSS-класс (может меняться) |
+| `data-ved` | `2ahUKEwj6k8...` | Encoded position/click tracking |
+| `ping` | `/url?sa=t&source=web...` | Click-трекинг (Google логирует клик отдельным запросом) |
+
+---
+
+## Как вытащить все ссылки
+
+Прямо из DOM по `jsname="UWckNb"`:
+
+```javascript
+// Все органические результаты
+document.querySelectorAll('a[jsname="UWckNb"]')
+  .forEach(a => console.log(a.href))
+
+// → https://www.apple.com/ua/ipad/
+// → https://jabko.ua/ipad/
+// → https://www.apple.com/ua/ipad-pro/
+// → https://www.apple.com/ipad/
+// → https://www.macworld.com/...
+// → https://rozetka.com.ua/ua/tablets/...
+// → ...итого 8 на странице
+```
+
+Или из сырого HTML-ответа регуляркой:
+
+```javascript
+// В тексте HTML ищешь:
+html.match(/jsname="UWckNb"[^>]*href="([^"]+)"/g)
+// Отдаёт: href="https://www.apple.com/ua/ipad/", href="https://jabko.ua/..."
+```
+
+---
+
+## Важный нюанс: `/url?q=` vs прямой `href`
+
+Раньше (до ~2019) Google оборачивал все ссылки в редирект `/url?q=https://site.com&...`, чтобы отслеживать клики. Сейчас — **кладёт прямой URL в `href`**, а трекинг делает через атрибут `ping=` (браузер автоматически шлёт POST на этот URL при клике, не блокируя переход). Поэтому в HTML уже есть чистый URL без обёрток.
