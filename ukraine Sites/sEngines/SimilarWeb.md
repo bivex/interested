@@ -358,9 +358,136 @@ results = resp.json()
 # results['websites'][0]['name'] → 'amazon.com'
 ```
 
+---
+
 **Top-50 websites:**
+```python
+# Full reload по URL - никакого AJAX
+GET /top-websites/                                    # Global, все категории
+GET /top-websites/arts-and-entertainment/             # Фильтр по категории
+GET /top-websites/arts-and-entertainment/us/          # Категория + страна
+GET /top-websites/trending/                           # Трендовые
+
+# Парсинг - всё в __APP_DATA__.layout.data.sites (массив 50 объектов)
+for site in data['layout']['data']['sites']:
+    domain = site['domain']
+    bounce = site['bounceRate']
+    duration = site['visitsAvgDurationFormatted']
+    pages_per_visit = site['pagesPerVisit']
 ```
-GET /top-websites/                               → Global all categories
-GET /top-websites/arts-and-entertainment/        → Category filter
-GET /top-websites/arts-and-entertainment/us/     → Category + Country
+
+---
+
+### 12. Защита от скрапинга (Anti-bot стек)
+
+SimilarWeb имеет **наиболее агрессивную защиту** из всех пяти проанализированных сайтов:
+
+**Уровень 1 — AWS WAF:**
 ```
+challenge.js → собирает browser fingerprint
+/inputs      → отправляет mouse/keyboard/canvas entropy signals
+/telemetry   → 4× телеметрия при загрузке (поведенческий анализ)
+/mp_verify   → Mathematical Proof of Work (Proof-of-Work challenge)
+```
+Результат сохраняется в `localStorage.awswaf_session_storage` и передаётся в куки при каждом запросе. Без валидного WAF-токена — `x-amzn-waf-action: captcha`.
+
+**Уровень 2 — FingerprintJS v2:**
+```javascript
+// cdn.jsdelivr.net/npm/fingerprintjs2@2.1.4
+// Собирает: canvas fingerprint, WebGL, AudioContext, fonts,
+// screen resolution, timezone, plugins, user-agent, platform
+Fingerprint2.get(components => {
+  const fp = Fingerprint2.x64hash128(components.map(c => c.value).join(''), 31);
+  // передаётся в WAF telemetry
+});
+```
+
+**Уровень 3 — CloudFront Rate Limiting:**
+```
+x-amzn-waf-action: allow    → нормальный запрос
+x-amzn-waf-action: captcha  → превышен лимит / подозрительный паттерн
+x-amzn-waf-action: block    → полная блокировка
+x-cache: Error from cloudfront → ответ заблокирован
+```
+
+**Уровень 4 — Paywall (`isLimited`):**
+```javascript
+// В __APP_DATA__.layout.isLimited = true
+// Большинство детальных данных (organic %, referrals, paid keywords) → null
+trafficSources[1].percentage = null  // organic - скрыто
+trafficSources[2].percentage = null  // referrals - скрыто
+```
+
+---
+
+### 13. Субдомены и вся инфраструктура
+
+| Домен | Назначение |
+|-------|-----------|
+| `www.similarweb.com` | Основной сайт (SSR HTML + `/api/universal` + `/api/exception`) |
+| `static-us-east-1.similarcdn.com` | Статические ресурсы JS/CSS (React, app bundles) |
+| `site-images.similarcdn.com` | Favicon и превью изображений сайтов |
+| `gro.similarweb.com` | i18n переводы |
+| `secure.similarweb.com` | Аутентификация (login/logout) |
+| `pro.similarweb.com` | PRO/платная версия |
+| `account.similarweb.com` | Управление аккаунтом |
+| `matomo.cloudfront.similarweb.io` | Self-hosted Matomo аналитика через CloudFront |
+| `7ef1a1ef43ff.edge.sdk.awswaf.com` | AWS WAF SDK (challenge, telemetry, verify) |
+| `cdn.growthbook.io` | GrowthBook A/B testing feature flags |
+| `cdn.jsdelivr.net` | FingerprintJS v2 CDN |
+| `accounts.google.com` | Google One Tap sign-in |
+| `www.googletagmanager.com` | Google Tag Manager |
+| `s3.us-east-1.amazonaws.com` | AWS S3 (статические ассеты) |
+
+---
+
+### 14. URL-схема сайта (полная карта)
+
+```
+www.similarweb.com/
+├── /top-websites/                         # Топ-50 глобально
+│   ├── /top-websites/{category}/          # Фильтр по категории (26 категорий)
+│   ├── /top-websites/{category}/{country}/# Категория + страна (60 стран)
+│   └── /top-websites/trending/            # Трендовые
+│
+├── /website/{domain}/                     # Профиль сайта (overview)
+│   ├── #overview                          # ↕ hash-навигация (не AJAX)
+│   ├── #ranking
+│   ├── #geography
+│   ├── #competitors
+│   ├── #traffic-sources
+│   ├── #outgoing-links
+│   └── #technologies
+│
+├── /website/{domain}/vs/{domain2}/        # Сравнение двух сайтов
+│
+├── /{locale}/website/{domain}/            # Локализованные версии
+│   └── /de/, /es/, /fr/, /it/, /ja/, /pt/, /tr/, /zh/, /zh-tw/, /ru/
+│
+└── /api/
+    ├── /api/universal?term=&dataKeys=     # Autocomplete (GET, JSON)
+    └── /api/exception                     # Error reporting (POST only)
+```
+
+---
+
+### 15. Итоговое сравнение всех пяти движков
+
+| Критерий | Google | Bing | Yahoo! | DDG | SimilarWeb |
+|----------|--------|------|--------|-----|------------|
+| **Рендеринг** | SSR | SSR | SSR | SSR+React | SSR+React 17 |
+| **Пагинация** | Full reload `?start=N` | SPA AJAX `snrjson` | Full reload `?b=N` | Infinite Scroll `d.js` JSONP | Full reload (URL фильтр) |
+| **Данные** | HTML | HTML / JSON | HTML | JSONP | `window.__APP_DATA__` |
+| **CDN** | Google own | Akamai/Azure | ATS | nginx | **AWS CloudFront** |
+| **Server** | `gws` | `Microsoft-IIS` | `ATS` | `nginx` | **`CloudFront`** |
+| **Кодирование** | `br` | `br` | `br` | `br` | **`gzip`** |
+| **Бэкенд поиска** | Google | Microsoft | Microsoft Bing | Microsoft Bing v7 | Proprietary data |
+| **WAF** | reCAPTCHA | — | — | — | **AWS WAF + FingerprintJS + PoW** |
+| **Anti-bot** | Слабый | Слабый | Слабый | Слабый | **Агрессивный** |
+| **Autocomplete** | `/complete/search` JSON+`)]}'` | `/AS/Suggestions` HTML | `/sugg/gossip/...` JSON | `/ac/` OpenSearch JSON | **`/api/universal`** (websites+apps+companies) |
+| **Ссылки** | `a[jsname="UWckNb"]` прямой href | `/ck/a?u=a1[B64]` redirect | `a[data-matarget="algo"]` прямой | `a[data-testid="result-title-a"]` прямой | **`sites[N].domain` → `/website/{domain}/`** |
+| **Paywall** | Нет | Нет | Нет | Нет | **Да** |
+| **A/B testing** | Internal | Internal | Internal | DDG.Data.Experiments | **GrowthBook** |
+| **Analytics** | Google Analytics | Internal | Yahoo Rapid v3.69 | improving.duckduckgo.com | **Matomo self-hosted + GTM** |
+| **Privacy** | Низкая | Низкая | Низкая | **Высокая** | Низкая |
+| **localStorage** | — | — | — | — | **awswaf_token + gbFeaturesCache** |
