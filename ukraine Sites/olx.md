@@ -134,3 +134,111 @@ for page in range(0, 25):  # 25 сторінок = 1000 оголошень
 1. **Потрібна авторизована сесія** (куки з браузера) — без них GraphQL може повертати помилку або капчу
 2. **Promoted оголошення дублюються** між сторінками — фільтруй за індексами з `metadata.source.organic`
 3. **API обмежує** до 1000 результатів (`total_elements`), хоча реальних 7888 (`visible_total_count`) — для повного збору потрібно фільтрувати по регіонах/категоріях
+
+
+
+
+
+-----------------------------------------------------------------------------------------
+
+
+
+## Що змінилось після авторизації
+
+### ✅ Головна зміна: Bearer Token у всіх запитах
+
+Тепер **кожен** API-запит автоматично відправляє JWT:
+
+```
+Authorization: Bearer eyJraWQiOiI3TzI5...
+```
+
+Це **AWS Cognito JWT**, термін дії — **15 хвилин**, після чого сайт оновлює його автоматично через refresh flow. Тобто для скрейпінгу потрібно підтримувати живу сесію або оновлювати токен.
+
+---
+
+### 📊 Порівняння: без авторизації vs з авторизацією
+
+| | Без авторизації | З авторизацією |
+|---|---|---|
+| GraphQL заголовки | `Content-Type, accept, accept-language, x-client` | + **`Authorization: Bearer <JWT>`** |
+| Отримання оголошень | ✅ Працює | ✅ Працює |
+| Параметр `sl` | Потрібен (копіюється з сесії) | Потрібен (той самий) |
+| Кількість результатів | 52/сторінку | 52/сторінку (однаково) |
+| **Телефони продавців** | ❌ Недоступно | ✅ **Повний номер телефону** |
+| Персональні рекомендації | ❌ | ✅ |
+
+---
+
+### 📞 Нова схема: отримання телефону продавця (3 кроки)
+
+При кліку "показати" запускається ланцюжок:
+
+**1. Anti-fraud challenge:**
+```
+POST https://friction.olxgroup.com/challenge
+Body: { "action": "reveal_phone_number", "aud": "atlas", 
+        "actor": { "username": "<user_uuid>" },
+        "scene": { "ad_id": "916372110", ... } }
+```
+
+**2. Token exchange:**
+```
+POST https://friction.olxgroup.com/exchange
+```
+
+**3. Отримання номера:**
+```
+GET https://www.olx.ua/api/v1/offers/{offer_id}/limited-phones/
+Headers: Authorization: Bearer <JWT>
+
+Response: { "data": { "phones": ["068-111-1111"] } }
+```
+
+**4. Трекінг перегляду:**
+```
+POST https://www.olx.ua/api/v1/offers/{offer_id}/phone-view/
+Body: {}
+```
+
+> ⚠️ **Friction challenge** — це антибот-захист OLX. Він перевіряє що дію виконує реальний авторизований користувач. Без проходження цього challenge endpoint `/limited-phones/` поверне помилку.
+
+---
+
+### 🔑 Що стало легше з авторизацією
+
+1. **Номери телефонів** — тепер доступні через `/api/v1/offers/{id}/limited-phones/` (з Bearer token)
+2. **GraphQL без `x-fingerprint`** — при авторизації не потрібен важкий fingerprint-хедер (він залишився тільки в REST `/friendly-links/` запиті)
+3. **GraphQL без `credentials: same-origin`** — Bearer token достатньо, куки не обов'язкові для основного API
+4. **`OtherSellerAdsQuery`** — можна отримати всі оголошення продавця за `sellerId`
+5. **`AdRecommendationsQuery`** — рекомендовані схожі оголошення
+
+---
+
+### 🛠️ Практична схема збору даних (авторизований режим)
+
+```python
+headers = {
+    "Authorization": f"Bearer {access_token}",  # з куки access_token
+    "Content-Type": "application/json",
+    "accept": "application/json",
+    "accept-language": "uk",
+    "x-client": "DESKTOP"
+}
+
+# Перебір сторінок (25 сторінок × 40 = 1000 оголошень)
+for page in range(25):
+    variables = {
+        "searchParameters": [
+            {"key": "offset", "value": str(page * 40)},
+            {"key": "limit",  "value": "40"},
+            {"key": "query",  "value": "apple ipad"}
+        ]
+    }
+    # POST https://www.olx.ua/apigateway/graphql
+
+# Телефон (тільки якщо потрібно + є friction token)
+# GET https://www.olx.ua/api/v1/offers/{id}/limited-phones/
+```
+
+**Токен живе 15 хв** → потрібно оновлювати кожні ~14 хвилин через AWS Cognito refresh endpoint.
