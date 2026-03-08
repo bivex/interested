@@ -462,3 +462,172 @@ GET https://www.capterra.com/customer-relationship-management-software/?features
 | Тотал продуктов | `span.typo-30.font-semibold` → `"Filter (1405) Products:"` |
 | Текущая страница | `span.active[data-page]` |
 | Последняя страница | `span.pagination-item[data-page]:last-of-type` |
+
+
+Продолжаю с того места где оборвалось — после таблицы CSS-селекторов.
+
+---
+
+### 9. Дополнительные находки по карточкам
+
+**Shortlist badge** — независим от типа карточки. Он может быть и у organic, и у sponsored. Это отдельный признак качества, не признак платного размещения:
+
+```
+sponsored + shortlist  → "Visit Website" + badge (Bigin, Less Annoying...)
+sponsored - shortlist  → "Visit Website" без badge
+organic   + shortlist  → "View Profile" + badge
+organic   - shortlist  → "View Profile" без badge
+```
+
+**Product URL pattern** для парсинга — берётся из родительского `<a>` вокруг `<h2>`:
+
+```
+organic:   <a href="/p/{numericId}/{Slug}/">  → оборачивает h2
+sponsored: <button class="link">              → h2 обёрнут в кнопку (без href!)
+           + logo link: <a class="tf6i4tz" href="/p/{numericId}/{Slug}/">  ← URL здесь
+```
+
+То есть для sponsored карточки URL страницы продукта брать из **логотипа** (`a.tf6i4tz`), не из заголовка.
+
+**Sub-рейтинги в DOM** — все данные присутствуют в HTML при SSR (даже когда панель визуально скрыта через `height: 8px`). При простом GET запросе они полностью доступны без JS:
+
+```html
+<!-- Скрытый блок, но данные есть в разметке -->
+<div class="c1ghu4k7 b1c6qyun cyd62s7 mt-1">   ← height:8px через CSS
+  Overall 4.9 / Ease of Use 4.8 / Customer Service 4.7 / Features 4.8 / Value for Money 4.7
+</div>
+```
+
+---
+
+### 10. Пагинация — важный нюанс
+
+Числовые ссылки страниц **не имеют `href`** атрибута — они `<a>` без href, клик обрабатывается через Next.js router:
+
+```html
+<!-- Числа 1–9: href = null, навигация через JS -->
+<span data-page="2" class="e1xzmg0z i1091fzf p1k1mql1 ...">
+  <a class="">2</a>          ← нет href!
+</span>
+
+<!-- Только Next (►) и Last (►|) имеют реальный href -->
+<span class="sb interactive pagination-item" data-page="2">
+  <a class="e1xzmg0z text-neutral-95"
+     href="/customer-relationship-management-software/?page=2">  ← есть href
+    <i class="icon-chevron-right"/>
+  </a>
+</span>
+<span class="sb interactive pagination-item" data-page="57">
+  <a href="/customer-relationship-management-software/?page=57">
+    <i class="icon-chevron-line-right"/>
+  </a>
+</span>
+```
+
+**Вывод для скрапера:** URL страниц нужно конструировать вручную — `?page=N`, не извлекать из DOM числовых кнопок.
+
+**Текущая страница** определяется по классу `active` на `span`:
+```html
+<span class="e1xzmg0z p1k1mql1 ... border active" data-page="1">
+```
+
+**Последняя страница** — из `span.sb.interactive.pagination-item` с наибольшим `data-page` (или последний span с иконкой `icon-chevron-line-right`).
+
+---
+
+### 11. Механизм фильтров — детальный flow
+
+```
+Клик на чекбокс (React state update)
+  ↓
+router.push('/customer-relationship-management-software/?pricing_options=FREE_TRIAL')
+  ↓
+history.pushState() → URL в адресной строке меняется
+  ↓
+Next.js App Router делает:
+  fetch('...?pricing_options=FREE_TRIAL&_rsc=b5uel', {
+    headers: {
+      'RSC': '1',
+      'Next-Router-State-Tree': '...',
+      'Next-Router-Prefetch': '1'
+    }
+  })
+  ↓
+Сервер возвращает RSC (React Flight) payload
+  ↓
+React обновляет только изменённые Server Components
+  (список карточек, счётчик, пагинация)
+```
+
+При `503` на RSC запросе (rate limit/bot detection) Next.js fallback делает полный page reload.
+
+---
+
+### 12. Полная схема URL параметров
+
+```
+BASE: https://www.capterra.com/customer-relationship-management-software/
+
+СТРАНИЦЫ:
+  ?page=1..57          (25 продуктов/страница, 1405 всего)
+
+СОРТИРОВКА (два синонима одновременно при клике из UI):
+  ?sort=sponsored         &sortOrder=SPONSORED
+  ?sort=highest_rated     &sortOrder=HIGHEST_RATED
+  ?sort=most_reviews      &sortOrder=MOST_REVIEWS
+  ?sort=alphabetical      &sortOrder=ALPHABETICAL
+
+  При прямом GET достаточно одного: ?sort=highest_rated
+
+ПЛАН/ЦЕНА (запятая = несколько):
+  ?pricing_options=FREE_TRIAL
+  ?pricing_options=FREE_TRIAL,FREE_VERSION
+  ?pricing_options=FREE_TRIAL,FREE_VERSION,PER_MONTH,PER_YEAR,ONE_TIME
+
+ФУНКЦИИ (UUID через запятую):
+  ?features=0019f365-3e1b-4e2f-8f1e-cb77ba025078
+  ?features={uuid1},{uuid2}
+
+ПЛАТФОРМА:
+  ?deployment=CLOUD_SAAS_WEB_BASED
+  ?deployment=DESKTOP_MAC,DESKTOP_WINDOWS,MOBILE_ANDROID,MOBILE_IPHONE
+
+КОМБИНАЦИЯ:
+  ?page=2&sort=highest_rated&pricing_options=FREE_TRIAL&deployment=CLOUD_SAAS_WEB_BASED
+```
+
+---
+
+### 13. Полная таблица CSS-селекторов (итоговая)
+
+| Что вытащить | CSS-селектор / атрибут |
+|---|---|
+| **Все карточки на странице** | `[id^="product-card-container-"]` |
+| **Numeric ID продукта** | `card.id.replace('product-card-container-', '')` |
+| **URL продукта (organic)** | `a.ljas29s.typo-30[href]` (родитель h2) |
+| **URL продукта (sponsored)** | `a.tf6i4tz[href]` (logo link) |
+| **URL продукта (универсально)** | `a.tf6i4tz` → `getAttribute('href')` |
+| **Название продукта** | `h2[data-testid*="product-header"]` → `textContent` |
+| **Тип: sponsored vs organic** | `data-testid*="upgraded-link"` → sponsored; `data-testid*="profile-link"` → organic |
+| **Рейтинг + кол-во отзывов** | `.sr2r3oj` → `"4.7 (715)"` |
+| **Только число рейтинга** | `.sr2r3oj` → split `" ("` → `[0]` |
+| **Только кол-во отзывов** | `.sr2r3oj` → match `\((\d+)\)` |
+| **Суб-рейтинги (скрытые)** | `.c1ghu4k7 .grid.grid-cols-2.mt-3` → label + `.w-6` |
+| **Overall рейтинг** | `.grid.grid-cols-2.text-sm .font-bold` + `.w-6` |
+| **Звёзды (тип)** | `i.icon-star-full[data-rating]` count + `i.icon-star-half` |
+| **Логотип src** | `a.tf6i4tz img` → `getAttribute('src')` |
+| **Логотип CDN** | `gdm-catalog-fmapi-prod.imgix.net/ProductLogo/{uuid}.{ext}` |
+| **CTA кнопка** | `button.p1hd3tcp` = "Visit Website" (sponsored) |
+| | `[data-testid="regular-product-button"]` = "View Profile" (organic) |
+| **Capterra Shortlist badge** | `a[class*="b1phz12s"]` |
+| **Shortlist badge href** | `.../shortlist/` |
+| **Ключевые фичи** | `[data-testid="product-card-category-features"] .flex.items-center` → `textContent` |
+| **% рекомендаций** | `.text-success-95` → `"88% recommend this product"` |
+| **Product UUID (ad трекинг)** | `buyer-intent-subject[product-id]` (перед карточкой) |
+| **Ad click UUID** | `buyer-intent-click[product-id]` (внутри карточки) |
+| **Тотал продуктов** | `span.typo-30.font-semibold` → `"Filter (1405) Products:"` |
+| **Текущая страница** | `span[data-page].active` → `getAttribute('data-page')` |
+| **Последняя страница** | `span.sb.interactive.pagination-item[data-page]:last-of-type` → `getAttribute('data-page')` |
+| **Фильтр-панель** | `[data-testid="filters-panel"]` |
+| **Sort By текущее** | `[data-testid="show-sortby"]` → `textContent` |
+| **Все filter testId** | `[data-testid^="checkbox-filter-"]` → `data-testid` = `checkbox-filter-{param}-{value}` |
