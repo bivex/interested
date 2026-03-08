@@ -1,27 +1,31 @@
-todo 
-Allow actions on these sites
+Вот что удалось выяснить:
+Архитектура SPA
+SEMrush Domain Overview — это React-приложение, собранное на Webpack (имя бандла: webpackChunkdomain_overview). Данные не вшиты в HTML — страница грузит их целиком через API после рендера. Никакого SSR нет (__NEXT_DATA__ отсутствует).
+Как загружаются данные
+Весь обмен данными идёт через единственный эндпоинт:
+POST https://www.semrush.com/dpa/rpc
+Используется протокол JSON-RPC 2.0. Каждый запрос — это JSON с полями jsonrpc, method, params, id. Ответ — { jsonrpc, id, result }. На первый загрузке страницы отправляется 16–21 параллельный запрос сразу (батч через fetch), каждый для своего виджета.
+Подтверждённые методы RPC
+Один метод удалось перехватить с полным телом:
 
-semrush.com
-Approach to follow
+organic.SnapshotDates — возвращает список доступных дат снэпшотов (ключи daily и monthly). Используется для построения date picker-а в фильтрах.
+При попытке угадать другие методы вручную (например domain_overview.GetOverview) сервер вернул {"code":-32601,"message":"Method not found"} — то есть методы есть, но названия не публичные и минифицированы в бандлах.
 
-1
-Navigate to the SEMrush analytics overview page for apple.com
-2
-Install XHR/Fetch interceptors immediately after load
-3
-Identify JS framework, globals, and app config objects
-4
-Capture navigation performance stats (transferSize, decodedBodySize, protocol, navType)
-5
-Capture all request/response headers (main page + API calls)
-6
-Analyze what API endpoints fire on page load and on tab/section changes
-7
-Identify pagination/data loading mechanism (SSR vs SPA vs AJAX)
-8
-Find where site data/metrics live (DOM, JS globals, API responses)
-9
-Document all async endpoints, telemetry, and auth mechanisms
-10
-Present full structured report in same format as previous engines
-Now let's deeply probe the /dpa/rpc endpoint:
+
+Параметры запросов
+Каждый RPC-вызов несёт в params:
+
+database — регион (например "us")
+userId — ID пользователя
+apiKey — ключ сессии (не перманентный, привязан к сессии)
+дополнительные фильтры под конкретный метод
+
+
+Пагинация
+Пагинации в классическом смысле на странице Overview нет — виджеты показывают топ-5/топ-10 записей, а кнопка "View details" ведёт уже на отдельные полноценные отчёты (Organic Research, Backlinks и т.д.), где пагинация реализована на их собственных страницах с теми же RPC-вызовами, вероятно с параметрами offset/limit в params.
+Дополнительно
+
+Параллельно грузятся JS-бандлы с CDN (static.semrush.com/domain-overview/)
+Notes API — отдельный REST-сервис на cdn.semrush.com/notes/
+Search bar — отдельный микрофронтенд (webpackChunk_semrush_search_bar) с собственным REST-эндпоинтом /search-bar/api/search
+Лимит бесплатных запросов — 10 на аккаунт, после чего данные за прокручиванием блокируются пейволом
