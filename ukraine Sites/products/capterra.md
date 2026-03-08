@@ -631,3 +631,588 @@ BASE: https://www.capterra.com/customer-relationship-management-software/
 | **Фильтр-панель** | `[data-testid="filters-panel"]` |
 | **Sort By текущее** | `[data-testid="show-sortby"]` → `textContent` |
 | **Все filter testId** | `[data-testid^="checkbox-filter-"]` → `data-testid` = `checkbox-filter-{param}-{value}` |
+
+Вот полный блок про отзывы и пагинацию для Capterra — в той же структуре и детализации:
+
+---
+
+## Блок: Страница отзывов продукта — Reviews & Pagination
+
+---
+
+### 1. URL страницы отзывов
+
+```
+https://www.capterra.com/p/{numericId}/{Product-Slug}/reviews/
+```
+
+Пример:
+```
+https://www.capterra.com/p/204998/Bigin-by-Zoho-CRM/reviews/
+```
+
+Это полноценная **SSR-страница** (Next.js App Router). Доступна plain GET без браузера. Данные также дублируются в Schema.org JSON-LD (тег `<script type="application/ld+json">`).
+
+---
+
+### 2. URL-параметры — фильтры и пагинация
+
+> **Критически важное открытие:** Capterra использует **смешанную модель** фильтрации — часть фильтров серверная (меняют URL и делают RSC-запрос), часть только клиентская (фильтруют из уже загруженных 25 отзывов без запроса к серверу).
+
+#### Серверные фильтры (попадают в URL, делают новый запрос):
+
+| Параметр | Значения | Описание |
+|---|---|---|
+| `page` | 1, 2, … N | Номер страницы (25 отзывов на странице) |
+| `overallRating` | `rating5`, `rating4`, `rating3`, `rating2`, `rating1` | Фильтр по звёздному рейтингу (одно значение) |
+| `sort` | `HIGHEST_COMPLETENESS_SCORE`, `MOST_RECENT`, `HIGHEST_RATED`, `LOWEST_RATED` | Сортировка |
+
+#### Клиентские фильтры (НЕ попадают в URL, фильтруют DOM на стороне браузера):
+
+| Параметр (name) | Значения (value) | Описание |
+|---|---|---|
+| `companySize` | `companySizeSelf`, `companySize1To10`, `companySize11To50`, `companySize51To200`, `companySize201To500`, `companySize501To1000`, `companySize1001To5000`, `companySize5001To10000`, `companySize10001Up` | Размер компании |
+| `role` | `user`, `administrator`, `teamOrHelped` | Роль пользователя |
+| `timeUsedProduct` | `freeTrial`, `lessThan6Months`, `6To12Months`, `1To2Years`, `2YearsUp` | Срок использования |
+| `frequencyUsedProduct` | `daily`, `weekly`, `monthly`, `frequencyother` | Частота использования |
+
+> **Важно:** Клиентские фильтры работают только среди 25 уже загруженных на страницу отзывов. При смене страницы они сбрасываются.
+
+#### Примеры URL:
+
+```
+# Страница 1, сортировка по умолчанию
+GET /p/{id}/{Slug}/reviews/
+
+# Страница 2
+GET /p/{id}/{Slug}/reviews/?page=2
+
+# Только 5-звёздочные, самые свежие
+GET /p/{id}/{Slug}/reviews/?overallRating=rating5&sort=MOST_RECENT
+
+# 4-звёздочные, страница 3, самые полезные
+GET /p/{id}/{Slug}/reviews/?overallRating=rating4&sort=HIGHEST_COMPLETENESS_SCORE&page=3
+
+# 1-звёздочные, самые низкие
+GET /p/{id}/{Slug}/reviews/?overallRating=rating1&sort=LOWEST_RATED
+```
+
+> **Важно:** Ссылки в пагинаторе (числовые кнопки) содержат только `?page=N` без активных серверных фильтров — при клике фильтр по overallRating теряется. Для скрапинга URL нужно конструировать вручную.
+
+---
+
+### 3. Технология фильтрации (RSC + PJAX аналог)
+
+```
+Пользователь кликает checkbox фильтра (overallRating)
+  ↓
+Next.js App Router вызывает router.push()
+  ↓
+history.pushState() → URL в браузере обновляется
+  ↓
+fetch('/p/{id}/{Slug}/reviews/?overallRating=rating5&sort=MOST_RECENT&_rsc=wcgaq', {
+    headers: { 'RSC': '1', 'Next-Router-State-Tree': '...' }
+  })
+  → 503 (bot detection срабатывает на RSC запрос)
+  ↓
+Fallback: POST /p/{id}/{Slug}/reviews/?overallRating=rating5&sort=MOST_RECENT
+  → 200 (plain POST проходит)
+  ↓
+React обновляет только список отзывов и пагинацию в DOM
+```
+
+---
+
+### 4. Общая DOM-структура страницы отзывов
+
+```html
+<buyer-intent-view>
+  <div class="sb screen-container flex lg:gap-x-8">
+
+    <!-- ПРАВАЯ КОЛОНКА: sticky sidebar (product info + write review button) -->
+    <div class="sticky top-0">
+      <img>  <!-- логотип -->
+      <span data-testid="productslug">Bigin by Zoho CRM</span>
+      <span class="sr2r3oj">4.7 (715)</span>    <!-- overall rating + count -->
+      <button data-testid="visit-website-button">Visit Website</button>
+      <button data-testid="demo-button">Demo</button>
+    </div>
+
+    <!-- ЛЕВАЯ КОЛОНКА: основной контент -->
+    <div class="flex w-full flex-col gap-y-12 lg:max-w-[70%]">
+
+      <!-- Секция 1: Заголовок + мини-рейтинги -->
+      <div class="flex flex-col gap-y-6">
+        <h1 class="e1xzmg0z d72np9t">Reviews of {Product Name}</h1>
+        <div class="flex w-full flex-col justify-between gap-y-6 md:flex-row">
+          <div class="flex w-full items-center justify-between">
+            <span>Ease of use</span>
+            <span class="sr2r3oj">4.7</span>
+          </div>
+          <div class="border-l-1 border-neutral-40 mx-6 hidden md:visible md:block"/>
+          <div class="flex w-full items-center justify-between">
+            <span>Customer Service</span>
+            <span class="sr2r3oj">4.5</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Секция 2: Pros and Cons (Featured review cards) -->
+      <div class="flex flex-col gap-y-6">
+        <h2 class="e1xzmg0z hpgn492">Pros and Cons in Reviews</h2>
+        <button class="sli6p0m">Write a review</button>
+        <!-- краткие Featured отзывы (2-3 штуки) -->
+      </div>
+
+      <!-- Секция 3: Фильтры + счётчик -->
+      <div class="mb-6 flex flex-col gap-y-6">
+        <h2 class="e1xzmg0z hpgn492">Showing most helpful reviews</h2>
+        <span class="typo-30 font-semibold">Showing 1-25 of 715 Reviews</span>
+        <button class="sli6p0m">Sort & Filter</button>
+        <!-- фильтр-панель (мобильный аккордеон) -->
+      </div>
+
+      <!-- Секция 4: Список отзывов (25 штук) + пагинация -->
+      <div class="flex scroll-mt-[200px] flex-col gap-y-6" data-testid="...">
+        <!-- 25 обёрток с отзывами -->
+        <div>  <!-- wrapper -->
+          <div class="e1xzmg0z c1ofrhif typo-10 mb-6 space-y-4 p-6 lg:space-y-6">
+            <!-- карточка отзыва -->
+          </div>
+        </div>
+        <!-- ... -->
+
+        <!-- Пагинация -->
+        <div class="flex w-full flex-col" data-testid="pagination-section">
+          <div class="flex flex-row items-center justify-center">
+            <nav class="e1xzmg0z pk4dy8l">...</nav>
+          </div>
+        </div>
+      </div>
+
+      <!-- JSON-LD Schema -->
+      <script type="application/ld+json">
+        {"@type": "SoftwareApplication", "aggregateRating": {...}, "review": [...25 reviews...]}
+      </script>
+
+    </div>
+  </div>
+</buyer-intent-view>
+```
+
+---
+
+### 5. Анатомия одной карточки отзыва
+
+```html
+<!-- Внешняя обёртка -->
+<div class="e1xzmg0z c1ofrhif typo-10 mb-6 space-y-4 p-6 lg:space-y-6">
+
+  <!-- Главный flex-контейнер -->
+  <div class="flex flex-col gap-8">
+
+    <!-- === СЕКЦИЯ 1: Reviewer info === -->
+    <div class="flex justify-between">
+      <div class="flex w-full flex-row flex-wrap justify-between gap-x-6">
+
+        <!-- Аватар (фото или инициалы) -->
+        <div class="e1xzmg0z ajdk2qt bg-primary-20 lg h-12 w-12 shrink-0 overflow-hidden rounded-full">
+          <!-- Вариант A: фото -->
+          <img data-testid="reviewer-profile-pic"
+               alt="Robert G. avatar"
+               src="https://www.capterra.com/assets-bx-capterra/_next/image?url=https%3A%2F%2Freviews.capterra.com%2Fcdn%2Fprofile-images%2F...">
+          <!-- Вариант B: инициалы (текстовый узел в div) -->
+          <!-- <div class="ajdk2qt ...">DW</div>  ← "Dee W." → "DW" -->
+        </div>
+
+        <!-- Кнопка "Helpful / Not helpful" -->
+        <div><!-- thumbs up/down --></div>
+
+        <!-- Имя + должность + компания + срок использования -->
+        <div class="typo-10 text-neutral-90 w-full lg:w-fit">
+          <span class="typo-20 text-neutral-99 font-semibold">Robert G.</span><br>
+          Ownert<br>                         <!-- ← должность (text node) -->
+          Construction<br>                   <!-- ← отрасль/компания (text node) -->
+          Used the software for: <!-- -->I used a free trial  <!-- ← срок (text node + span) -->
+        </div>
+
+      </div>
+    </div>
+
+    <!-- === СЕКЦИЯ 2: Review content === -->
+    <div class="space-y-4 lg:space-y-6">
+
+      <!-- Заголовок + дата + рейтинг -->
+      <div class="flex flex-col gap-y-2 lg:justify-between">
+
+        <!-- Заголовок + дата -->
+        <div class="space-y-1">
+          <h3 class="typo-20 font-semibold">
+            "Great CRM with alot of features"
+          </h3>
+          <div class="typo-0 text-neutral-90">February 16, 2026</div>
+        </div>
+
+        <!-- Рейтинг (звёзды + число + подрейтинги) -->
+        <div class="sm:w-fit">
+          <div class="e1xzmg0z d1bcfjxe text-neutral-99">  ← dropdown wrapper
+
+            <!-- Visible: Overall rating row -->
+            <div class="flex w-fit items-center gap-x-2">
+              <div class="typo-20 text-neutral-99 flex cursor-pointer flex-wrap justify-between">
+                <div class="e1xzmg0z s1ncqr9d" data-testid="rating">
+                  <span class="snsqh3h">
+                    <i class="e1xzmg0z i6uwf7i s8onb8d icon-star-full" data-rating="1" role="img" aria-label="star-full"/>
+                    <i class="icon-star-full" data-rating="2"/>
+                    <i class="icon-star-full" data-rating="3"/>
+                    <i class="icon-star-full" data-rating="4"/>
+                    <i class="icon-star-full" data-rating="5"/>
+                    <!-- для 4.5: последняя звезда = icon-star-half -->
+                  </span>
+                  <span class="e1xzmg0z sr2r3oj">5.0</span>  ← числовой рейтинг
+                </div>
+              </div>
+              <i class="icon-chevron-down"/>
+            </div>
+
+            <!-- Hidden dropdown: sub-ratings (в DOM всегда, CSS height скрывает) -->
+            <div class="cg5sxaj b1c6qyun"/>   ← backdrop
+            <div class="e1xzmg0z c1ghu4k7 l1ix9ysh b1c6qyun shadow-2 rounded-2 z-20 w-full space-y-4 p-4">
+
+              <!-- Overall Rating -->
+              <div class="typo-20 text-neutral-99 flex cursor-pointer flex-wrap justify-between gap-x-6">
+                <span class="text-neutral-95 whitespace-nowrap">Overall Rating</span>
+                <div data-testid="Overall Rating-rating" class="e1xzmg0z s1ncqr9d">
+                  <span class="snsqh3h">
+                    <i class="icon-star-full" data-rating="1" aria-label="star-full"/>
+                    <!-- ... 5 stars ... -->
+                  </span>
+                  <span class="e1xzmg0z sr2r3oj">5.0</span>
+                </div>
+              </div>
+
+              <!-- Ease of Use -->
+              <div class="...">
+                <span class="text-neutral-95 whitespace-nowrap">Ease of Use</span>
+                <div data-testid="Ease of Use-rating" class="e1xzmg0z s1ncqr9d">
+                  <span class="snsqh3h"><i class="icon-star-full" data-rating="1"/></span>
+                  <!-- Capterra: 5 stars полных / неполных = значение *1. НО: только 1 <i> если 1 звезда etc  -->
+                  <span class="e1xzmg0z sr2r3oj">5.0</span>
+                </div>
+              </div>
+
+              <!-- Customer Service -->
+              <div data-testid="Customer Service-rating">...</div>
+
+              <!-- Features -->
+              <div data-testid="Features-rating">...</div>
+
+              <!-- Value for Money -->
+              <div data-testid="Value for Money-rating">...</div>
+
+              <!-- Likelihood to Recommend (прогресс-бар, не звёзды) -->
+              <div class="...">
+                <span class="text-neutral-95 whitespace-nowrap">Likelihood to Recommend</span>
+                <div class="flex items-center gap-x-2">
+                  <div data-testid="Likelihood to Recommend-rating"
+                       class="e1xzmg0z p1wosrpd border-neutral-99 bg-neutral-99 rounded-0 flex h-1 w-[100px]">
+                    <div class="bavdpqa" style="width:100%"/>  ← ширина = процент
+                    <progress max="10" value="10" style="display:none">100%</progress>
+                  </div>
+                  10/10   ← текстовое значение
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Overview text -->
+      <div class="!mt-4 space-y-6">
+        <p>So far its simple to use and looks like it will do what I want...</p>
+      </div>
+
+      <!-- "Continue reading" button (если текст обрезан) -->
+      <button data-testid="continue-reading-button"
+              class="e1xzmg0z byb7w84 t1s7oel5 p-0 text-[16px] font-semibold hidden">
+        Continue reading
+      </button>
+
+      <!-- Pros + Cons + дополнительные секции -->
+      <div class="space-y-6">
+
+        <!-- Pros -->
+        <div class="space-y-2">
+          <span>Pros</span>
+          <p>{текст плюсов}</p>
+        </div>
+
+        <!-- Cons -->
+        <div class="space-y-2">
+          <span>Cons</span>
+          <p>{текст минусов}</p>
+        </div>
+
+        <!-- Alternatives considered (опционально) -->
+        <div class="space-y-2">
+          <span class="whitespace-nowrap">Alternatives considered</span>
+          <!-- Список через <span class="typo-10 whitespace-nowrap font-normal"> -->
+          <span class="typo-10 whitespace-nowrap font-normal">HubSpot CRM</span>
+          <span class="typo-10 whitespace-nowrap font-normal">Pipedrive</span>
+        </div>
+
+        <!-- Reason for switching (опционально) -->
+        <div class="space-y-2">
+          <span class="font-semibold">Reason for choosing {Product}</span>
+          <p>{текст}</p>
+        </div>
+
+        <!-- Switched from (опционально) -->
+        <div class="space-y-2">
+          <span class="font-semibold">Reasons for switching to {Product}</span>
+          <p>{текст}</p>
+        </div>
+
+        <!-- Review Source -->
+        <div class="flex items-center gap-1">
+          <span id="review-source-label">Review Source</span>
+          <span class="e1xzmg0z d1bcfjxe t150ptnh">
+            <i class="icon-circle-question"/>
+            <!-- tooltip: "Non-incentivized review: any software user can leave a review..." -->
+            <div role="dialog" class="e1xzmg0z c1ghu4k7 l1ix9ysh ...">
+              Non-incentivized review: any software user can leave a review for any product...
+            </div>
+          </span>
+        </div>
+
+        <!-- "View less" button (когда текст развёрнут) -->
+        <button data-testid="view-less-button">View less</button>
+
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+---
+
+### 6. Звёзды: логика icon-star-full / icon-star-half
+
+Capterra использует **иконочный шрифт** (не SVG). В sub-ratings особенность: количество тегов `<i>` в `.snsqh3h` span НЕ всегда равно 5 — количество иконок определяется именно количеством `<i>` (только заполненные). Для точного рейтинга используй `.sr2r3oj` (числовое значение):
+
+| Элемент | Содержимое |
+|---|---|
+| `i.icon-star-full` | Полная звезда |
+| `i.icon-star-half` | Половина звезды |
+| `i.icon-star-empty` | Пустая звезда |
+| `.e1xzmg0z.sr2r3oj` | Числовой рейтинг, например `"5.0"` или `"4.5"` |
+
+Числовой рейтинг в sub-рейтингах **всегда надёжнее** для парсинга, чем подсчёт иконок.
+
+---
+
+### 7. Пагинация отзывов
+
+```html
+<nav class="e1xzmg0z pk4dy8l" data-testid="pagination-section">
+
+  <!-- |◄ Первая страница (disabled на стр.1) -->
+  <span class="sb pagination-item hover:bg-neutral-10 bg-transparent" data-page="1">
+    <span class="e1xzmg0z text-neutral-50">  ← disabled = text-neutral-50
+      <i class="icon-chevron-line-left"/>
+    </span>
+  </span>
+
+  <!-- ◄ Предыдущая (disabled на стр.1) -->
+  <span class="sb interactive pagination-item hover:bg-neutral-10 bg-transparent" data-page="1">
+    <span class="e1xzmg0z text-neutral-50">
+      <i class="icon-chevron-left"/>
+    </span>
+  </span>
+
+  <!-- Текущая страница (active, без <a>) -->
+  <span class="e1xzmg0z p1k1mql1 rounded-sm bg-transparent p-2
+               border-neutral-70 bg-neutral-10 border active"
+        data-page="1">
+    <span class="e1xzmg0z pointer-events-none no-underline">1</span>
+  </span>
+
+  <!-- Числовые страницы (с <a>) -->
+  <span class="e1xzmg0z i1091fzf p1k1mql1 rounded-sm bg-transparent p-2
+               hover:bg-neutral-30 hover:border-neutral-70 hover:border"
+        data-page="2">
+    <a class="e1xzmg0z ljas29s no-underline"
+       href="/p/{id}/{Slug}/reviews/?page=2">2</a>
+  </span>
+  <!-- страницы 3, 4, 5 — аналогично -->
+
+  <!-- ► Следующая (с <a> и href) -->
+  <span class="sb interactive pagination-item hover:bg-neutral-10 bg-transparent"
+        data-page="2">
+    <a class="e1xzmg0z text-neutral-95"
+       href="/p/{id}/{Slug}/reviews/?page=2">
+      <i class="icon-chevron-right"/>
+    </a>
+  </span>
+
+  <!-- ►| Последняя (с <a> и href) -->
+  <span class="sb interactive pagination-item hover:bg-neutral-10 bg-transparent"
+        data-page="29">
+    <a href="/p/{id}/{Slug}/reviews/?page=29">
+      <i class="icon-chevron-line-right"/>
+    </a>
+  </span>
+
+</nav>
+```
+
+**Детали пагинации отзывов:**
+
+- **25 отзывов на странице** (в отличие от 25 продуктов на страницах категорий — то же число, но разные данные)
+- `715 reviews ÷ 25 = 29 pages`
+- Активная страница: `span.active[data-page]` — без `<a>`, с классом `active`
+- Disabled кнопки: `span.text-neutral-50` внутри → иконка неактивна
+- Числа страниц (2–5): есть `<a href>` → **href содержит ТОЛЬКО `?page=N`**, без активных серверных фильтров
+- Последняя страница: `span.sb.interactive.pagination-item[data-page]:last-child` → `data-page="29"` + `<a href>`
+
+---
+
+### 8. Фильтр-панель (Sort & Filter)
+
+Панель открывается по кнопке `button.sli6p0m "Sort & Filter"`. В мобильном виде это аккордеон со скрытым `div.fcs8s7v`. Все фильтры имеют `data-testid` по паттерну `filter-{group}-{value}-mobile`:
+
+```html
+<!-- Sort section -->
+<div data-testid="filter-sort-mobile">
+  <!-- radio inputs name="radio" -->
+  <label data-testid="filter-sort-HIGHEST_COMPLETENESS_SCORE-mobile">
+    <input type="radio" name="radio" value="HIGHEST_COMPLETENESS_SCORE">  Most Helpful
+  </label>
+  <label data-testid="filter-sort-MOST_RECENT-mobile">
+    <input type="radio" name="radio" value="MOST_RECENT">  Most Recent
+  </label>
+  <label data-testid="filter-sort-HIGHEST_RATED-mobile">
+    <input type="radio" name="radio" value="HIGHEST_RATED">  Highest Rating
+  </label>
+  <label data-testid="filter-sort-LOWEST_RATED-mobile">
+    <input type="radio" name="radio" value="LOWEST_RATED">  Lowest Rating
+  </label>
+</div>
+
+<!-- Overall Rating (SERVER-SIDE) -->
+<div data-testid="filter-overallRating-mobile">
+  <label data-testid="filter-overallRating-5-mobile">
+    <input type="checkbox" name="overallRating" value="rating5">  5.0
+  </label>
+  <!-- rating4, rating3, rating2, rating1 -->
+</div>
+
+<!-- Company Size (CLIENT-SIDE ONLY) -->
+<div data-testid="filter-companySize-mobile">
+  <label data-testid="filter-companySize-A-mobile">
+    <input type="checkbox" name="companySize" value="companySizeSelf">  Self-employed
+  </label>
+  <label data-testid="filter-companySize-B-mobile">
+    <input type="checkbox" name="companySize" value="companySize1To10">  1-10 employees
+  </label>
+  <!-- ...до companySize10001Up -->
+</div>
+
+<!-- User Role (CLIENT-SIDE ONLY) -->
+<div data-testid="filter-role-mobile">
+  <label data-testid="filter-role-User-mobile">
+    <input type="checkbox" name="role" value="user">  User
+  </label>
+  <label data-testid="filter-role-Administrator-mobile">
+    <input type="checkbox" name="role" value="administrator">  Administrator
+  </label>
+  <label data-testid="filter-role-TeamMember,HelpedInPurchase-mobile">
+    <input type="checkbox" name="role" value="teamOrHelped">  Other
+  </label>
+</div>
+
+<!-- Time Used (CLIENT-SIDE ONLY) -->
+<div data-testid="filter-timeUsedProduct-mobile">
+  <input name="timeUsedProduct" value="freeTrial"> Free Trial
+  <input name="timeUsedProduct" value="lessThan6Months"> Less than 6 months
+  <input name="timeUsedProduct" value="6To12Months"> 6-12 months
+  <input name="timeUsedProduct" value="1To2Years"> 1-2 years
+  <input name="timeUsedProduct" value="2YearsUp"> 2+ years
+</div>
+
+<!-- Frequency Used (CLIENT-SIDE ONLY) -->
+<div data-testid="filter-frequencyUsedProduct-mobile">
+  <input name="frequencyUsedProduct" value="daily"> Daily
+  <input name="frequencyUsedProduct" value="weekly"> Weekly
+  <input name="frequencyUsedProduct" value="monthly"> Monthly
+  <input name="frequencyUsedProduct" value="frequencyother"> Other
+</div>
+```
+
+---
+
+### 9. Schema.org JSON-LD — бонус для парсинга
+
+Capterra встраивает в каждую страницу отзывов `<script type="application/ld+json">` с полными данными о продукте и **всеми 25 отзывами текущей страницы** в машиночитаемом формате:
+
+```json
+{
+  "@type": "SoftwareApplication",
+  "name": "Bigin by Zoho CRM",
+  "aggregateRating": {
+    "@type": "AggregateRating",
+    "ratingValue": 4.7,
+    "reviewCount": 715
+  },
+  "review": [
+    {
+      "@type": "Review",
+      "author": { "@type": "Person", "name": "Robert G." },
+      "reviewBody": "Great CRM with alot of features",
+      "reviewRating": {
+        "@type": "Rating",
+        "ratingValue": 5,
+        "bestRating": 5,
+        "worstRating": 1
+      }
+    }
+    // ... 24 более отзыва
+  ]
+}
+```
+
+> Это самый чистый способ парсинга без риска поломки от CSS-изменений.
+
+---
+
+### 10. CSS-селекторы для парсинга отзывов
+
+| Что вытащить | Селектор / метод |
+|---|---|
+| **Список отзывов (контейнер)** | `.flex.scroll-mt-\\[200px\\].flex-col.gap-y-6` |
+| **Одна карточка** | `div.c1ofrhif.typo-10.mb-6.p-6` |
+| **Имя рецензента** | `.typo-20.text-neutral-99.font-semibold` (span) |
+| **Должность / отрасль / срок** | text-узлы в `.typo-10.text-neutral-90.w-full` → `textContent.split('\n')` |
+| **Аватар-фото** | `img[data-testid="reviewer-profile-pic"]` → `src` |
+| **Аватар-инициалы** | `.ajdk2qt` → textContent, если нет img внутри |
+| **Заголовок отзыва** | `h3.typo-20.font-semibold` |
+| **Дата отзыва** | `div.typo-0.text-neutral-90` |
+| **Overall рейтинг (числовой)** | `[data-testid="rating"] .sr2r3oj` |
+| **Overall рейтинг (звёзды)** | `[data-testid="rating"] .snsqh3h i.icon-star-full` — подсчёт + `.icon-star-half` |
+| **Sub-рейтинг (Overall)** | `[data-testid="Overall Rating-rating"] .sr2r3oj` |
+| **Sub-рейтинг (Ease of Use)** | `[data-testid="Ease of Use-rating"] .sr2r3oj` |
+| **Sub-рейтинг (Customer Service)** | `[data-testid="Customer Service-rating"] .sr2r3oj` |
+| **Sub-рейтинг (Features)** | `[data-testid="Features-rating"] .sr2r3oj` |
+| **Sub-рейтинг (Value for Money)** | `[data-testid="Value for Money-rating"] .sr2r3oj` |
+| **Likelihood to Recommend** | `[data-testid="Likelihood to Recommend-rating"] progress` → `value/max` или соседний text `10/10` |
+| **Текст обзора (overview)** | `.\\!mt-4.space-y-6 p` |
+| **Pros текст** | первый `.space-y-2` внутри `.space-y-6` → `p` |
+| **Cons текст** | второй `.space-y-2` → `p` |
+| **Alternatives considered** | `span.whitespace-nowrap` + соседние `span.typo-10.whitespace-nowrap.font-normal` |
+| **Reason for choosing** | `span.font-semibold` содержащий "Reason for" + `p` рядом |
+| **Источник отзыва** | `#review-source-label` → "Review Source" (всегда одинаковый) |
+| **Общий счётчик** | `span.typo-30.font-semibold` → "Showing 1-25 of 715 Reviews" |
+| **Текущая страница** | `span[data-page].active` → `getAttribute('data-page')` |
+| **Последняя страница** | `span.sb.interactive.pagination-item[data-page]:last-child` → `data-page` |
+| **Schema.org данные** | `script[type="application/ld+json"]:last-of-type` → JSON.parse → `.review[]` |
