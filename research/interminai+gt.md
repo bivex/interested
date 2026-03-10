@@ -1,62 +1,176 @@
-Отлично! Теперь понятна полная картина.
+Сейчас посмотрю документацию interminai и GT, чтобы расписать точный мануал.Буду основываться на логе из разговора. Вот полный пошаговый мануал:
 
 ---
 
-## Связка interminai + Gas Town — полная автоматика
-
-**interminai** — это виртуальный терминал для AI. Он позволяет агенту (например, auggie) запускать интерактивные программы, читать их вывод и отправлять ввод, как будто агент сидит за терминалом.
-
-**Gas Town** — оркестратор, который раздаёт задачи агентам и хранит состояние.
+## Gas Town + interminai — пошаговый мануал
 
 ---
 
-### Как это работает вместе
+### Шаг 0 — Проверить interminai
 
+```zsh
+# interminai — это alias, не бинарь, поэтому нужен интерактивный zsh
+zsh -i -c 'command -v interminai'
+
+# Если не нашёл — найти вручную
+grep -R "interminai" ~/.zshrc ~/.zprofile ~/.*rc 2>/dev/null
 ```
-Ты (человек)
-    ↓  gt sling <bead> crew
-Gas Town
-    ↓  создаёт сессию для агента
-auggie (агент)
-    ↓  interminai start -- gt start crew myname
-interminai (виртуальный терминал)
-    ↓  держит живую сессию gt
-Gas Town CLI внутри терминала
+
+После этого все GT команды запускать через:
+```zsh
+zsh -i -c 'gt ...'
 ```
 
 ---
 
-### Пример полного цикла
+### Шаг 1 — Создать HQ
 
-```bash
-# 1. Агент запускает GT-сессию через interminai
-interminai start --id gt-session -- gt start crew myname
+```zsh
+mkdir -p ~/gt
+zsh -i -c 'cd ~/gt && gt init'
+```
 
-# 2. Читает что происходит
-interminai output --id gt-session
+HQ — это центральная папка, которая управляет всеми rig'ами и crew.
 
-# 3. Отправляет команды
-interminai input --id gt-session "gt ready\n"
-interminai input --id gt-session "gt sling bead-abc crew\n"
+---
 
-# 4. Ждёт результата
-interminai wait --id gt-session --timeout 30
+### Шаг 2 — Добавить rig
 
-# 5. Читает результат
-interminai output --id gt-session
+**Если есть remote (GitHub):**
+```zsh
+zsh -i -c 'cd ~/gt && gt rig add https://github.com/user/myproject'
+```
 
-# 6. Завершает сессию
-interminai stop --id gt-session
+**Если локальный repo (через adopt — нужен GT контекст внутри папки):**
+```zsh
+zsh -i -c 'cd ~/gt && gt rig add --adopt /path/to/local/repo'
+```
+
+Проверить что rig добавился:
+```zsh
+zsh -i -c 'cd ~/gt && gt rig list'
 ```
 
 ---
 
-### Почему это мощно
+### Шаг 3 — Установить tmux (если не стоит)
 
-| Без interminai | С interminai |
-|---|---|
-| Агент запускает команды вслепую | Агент видит живой экран терминала |
-| Не может работать с интерактивными CLI | Работает с любым TUI/CLI |
-| Теряет контекст при перезапуске | GT хранит состояние в git |
+```zsh
+tmux -V  # проверить
 
-Скинь вывод `gt --help` — напишу конкретные команды под твой `loreSystem` проект.
+# Если нет:
+brew install tmux
+```
+
+Без tmux `gt start` не поднимет агентов.
+
+---
+
+### Шаг 4 — Запустить GT агентов
+
+```zsh
+zsh -i -c 'cd ~/gt && gt start --all'
+```
+
+Должны подняться:
+- Mayor
+- Deacon
+- witness (для каждого rig)
+- refinery (для каждого rig)
+
+Проверить статус:
+```zsh
+zsh -i -c 'cd ~/gt && gt status'
+```
+
+---
+
+### Шаг 5 — Создать crew workspace
+
+```zsh
+zsh -i -c 'cd ~/gt && gt crew add myname --rig myproject'
+```
+
+Это создаёт рабочую копию:
+```
+~/gt/myproject/crew/myname/
+```
+
+Проверить:
+```zsh
+zsh -i -c 'cd ~/gt && gt crew list --rig myproject'
+```
+
+---
+
+### Шаг 6 — Создать bead (task)
+
+```zsh
+cd ~/gt/myproject/crew/myname
+
+# Создать task
+bd create "Название задачи"
+
+# Посмотреть созданный bead (запомнить ID вида ls-bw3)
+gt show ls-bw3
+```
+
+---
+
+### Шаг 7 — Sling bead на crew
+
+```zsh
+# Dry-run (проверить target без реального назначения)
+gt sling ls-bw3 --dry-run
+
+# Реальный sling
+gt sling ls-bw3 myproject/crew/myname "Описание что делать"
+```
+
+Статус bead станет `HOOKED`.
+
+---
+
+### Шаг 8 — Attach к crew session
+
+```zsh
+cd ~/gt
+gt crew at myname --rig myproject
+```
+
+Это открывает tmux-сессию с активным crew workspace.
+
+---
+
+### Шаг 9 — Установить текущий issue
+
+```zsh
+# Из shell в crew workspace (не из agent UI)
+cd ~/gt/myproject/crew/myname
+gt issue set ls-bw3
+```
+
+---
+
+### Итоговая структура папок
+
+```
+~/gt/                              ← HQ
+~/gt/myproject/                    ← rig
+~/gt/myproject/crew/myname/        ← crew workspace
+```
+
+---
+
+### Быстрые команды для ежедневной работы
+
+```zsh
+# Переподключиться к сессии
+cd ~/gt && gt crew at myname --rig myproject
+
+# Посмотреть задачи
+cd ~/gt/myproject/crew/myname && gt show ls-bw3
+
+# Статус всего
+cd ~/gt && gt status
+```
