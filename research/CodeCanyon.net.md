@@ -1,3 +1,209 @@
+## Схема API CodeCanyon — XHR/Fetch запросы
+
+---
+
+### 🏗️ Архитектура
+
+Сайт построен на **Ruby on Rails + Hotwire (Turbo Drive + Stimulus)**. Большинство страниц рендерится **Server-Side (SSR)** — полный HTML приходит с сервером. XHR/Fetch используются точечно для динамических виджетов.
+
+---
+
+### 📡 Эндпоинты API
+
+#### 1. `GET /consociate/indite` — Основной tracking/redirect endpoint
+
+Вызывается при **каждой навигации** (Turbo Drive). Отвечает JSON-ом `{"redirect":false}` или `{"redirect":"url"}` для редиректов.
+
+```
+GET /consociate/indite
+  ?url=<текущий URL encoded>       ← обязательный, текущая страница
+  &referrer=<referer>              ← откуда пришли
+  &q=<поисковый запрос>           ← при поиске
+  &sort=<значение>                 ← текущая сортировка
+  &date=<значение>                 ← текущий фильтр по дате
+  &price_min=<число>              ← мин. цена
+  &price_max=<число>              ← макс. цена
+  &compatible_with=<платформа>    ← фильтр совместимости
+  &category=<slug>                ← категория
+  &page=<число>                   ← страница пагинации
+
+Ответ: {"redirect": false | "https://..."}
+```
+
+---
+
+#### 2. `GET /storefront/search_suggestions` — Автодополнение поиска
+
+```
+GET /storefront/search_suggestions
+  ?query=<текст>                   ← вводимый текст (от 2+ символов)
+  &revision=<hash>                 ← версия assets (из application.js)
+
+Ответ (JSON Array):
+[
+  {
+    "term": "ecommerce",           ← текст предложения
+    "popularity": 5315,            ← рейтинг популярности
+    "category_path": "wordpress",  ← slug категории (null = все)
+    "category_name": "WordPress"   ← название категории (null = все)
+  },
+  ...
+]
+```
+
+---
+
+#### 3. `GET /my/cart_entries` — Корзина пользователя
+
+```
+GET /my/cart_entries
+  (без параметров, использует сессию)
+
+Ответ:
+{"cart_entries": []}               ← пусто если не авторизован
+// авторизованный:
+{"cart_entries": [{id, item_id, ...}]}
+```
+
+---
+
+#### 4. `GET /my/user_nav` — Навигация пользователя (фрагмент)
+
+```
+GET /my/user_nav
+GET /my/user_nav?mobile=true
+
+Ответ: HTML-фрагмент с меню пользователя
+(«Sign In» кнопка если не авторизован)
+```
+
+---
+
+#### 5. `GET /item/{name}/{id}/recommended_items` — Рекомендации к товару
+
+```
+GET /item/product-name/12345678/recommended_items
+  (требует X-Requested-With: XMLHttpRequest заголовок)
+
+Ответ: HTML-фрагмент с рекомендуемыми товарами
+(«Invalid request» если открыть напрямую без заголовка)
+```
+
+---
+
+#### 6. `GET /my/favorites` — Избранное (требует авторизации)
+
+```
+GET /my/favorites?item_id=<id>
+Ответ: {"error":"Parameter missing"} / JSON статус
+```
+
+---
+
+#### 7. `GET /my/bookmarks/new` — Добавить в коллекцию
+
+```
+GET /my/bookmarks/new?item_id=<id>
+Ответ: {"error":"Authentication error (signed out)"} / HTML
+```
+
+---
+
+#### 8. `POST /storefront_api/csat` — CSAT опрос
+
+```
+POST /storefront_api/csat
+(внутренний, для оценки качества)
+```
+
+---
+
+### 🔍 URL-схема для страниц (SSR — HTML рендер)
+
+```
+/                                  ← Главная
+/category/{slug}                   ← Категория верхнего уровня
+/category/{slug}/{subcategory}     ← Подкатегория
+/search                            ← Поиск (редирект на category)
+/search/{term}                     ← Поиск по термину
+/item/{name}/{id}                  ← Страница товара
+/popular_item/by_category?category={slug}  ← Топ товары по категории
+```
+
+---
+
+### 🎛️ Параметры фильтрации (query string)
+
+| Параметр | Значения | Описание |
+|---|---|---|
+| `q` | текст | Поисковый запрос |
+| `sort` | `sales` \| `date` \| `rating` \| `trending` \| `price-asc` | Сортировка |
+| `date` | `this-day` \| `this-week` \| `this-month` \| `this-year` | Период добавления |
+| `price_min` | число (USD) | Минимальная цена |
+| `price_max` | число (USD) | Максимальная цена |
+| `compatible_with` | `WooCommerce` \| `Elementor` \| `Bootstrap` \| `WPML` \| ... | Совместимость |
+| `platform` | `WordPress 6.9.x` \| `iOS 15` \| `Android 12.0` \| ... | Платформа |
+| `sales` | `rank-0`...`rank-4` | Диапазон продаж (No Sales → Top Sellers) |
+| `rating_min` | `1`–`4` | Минимальный рейтинг |
+| `discounted_only` | `1` | Только со скидкой |
+| `page` | число | Пагинация |
+| `view` | `grid` | Вид отображения |
+| `category` | `wordpress` \| `php-scripts` \| `javascript` \| `css` \| `mobile` \| `html5` | Категория (в `/search`) |
+
+---
+
+### 🔄 Полный flow при открытии страницы категории с фильтрами
+
+```
+1. Пользователь → GET /category/wordpress?sort=sales&price_min=10&date=this-month
+   └── Сервер → SSR HTML с товарами (полная страница)
+
+2. JS (Turbo) → GET /consociate/indite?sort=sales&price_min=10&date=this-month&url=...
+   └── {"redirect": false}  ← страница верная, оставаться
+
+3. JS (cart-entries-loader) → GET /my/cart_entries
+   └── {"cart_entries": []}  ← обновить иконку корзины
+
+4. JS (fragment-loader) → GET /my/user_nav
+   └── HTML навигации пользователя (Sign In / аватар)
+
+5. Пользователь печатает в поиске → GET /storefront/search_suggestions?query=xxx&revision=...
+   └── [{term, popularity, category_path, ...}]
+
+6. Открытие страницы товара → GET /item/name/id/recommended_items
+   └── HTML блок похожих товаров
+```
+
+---
+
+### 🏷️ Структура данных товара (JSON-LD на странице)
+
+```json
+{
+  "@type": "Product",
+  "sku": 60550978,
+  "name": "Product Name",
+  "category": "WordPress",
+  "description": "...",
+  "brand": { "name": "AuthorName" },
+  "image": "https://s3.envato.com/files/.../thumb.jpg",
+  "url": "https://codecanyon.net/item/name/id",
+  "offers": {
+    "price": "39.00",
+    "priceCurrency": "USD",
+    "availability": "InStock",
+    "priceValidUntil": "2026-03-18T23:59:59+11:00"
+  }
+}
+```
+
+
+
+
+
+Старая
+
+
 На основе анализа сайта **CodeCanyon.net**, вот схема получения данных по категориям и продуктам с фильтрами:
 
 ## 📋 API СХЕМА CODECANYON
