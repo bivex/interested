@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(brew install:*)",
+      "Bash(grep:*)",
+      "mcp__staruml-wireframe__get_status",
+      "mcp__staruml-wireframe__wireframe_create_diagram",
+      "mcp__staruml-wireframe__wireframe_create_frame",
+      "mcp__staruml-wireframe__diagram_list_views",
+      "mcp__staruml-wireframe__wireframe_list_frames",
+      "mcp__staruml-wireframe__element_list_views",
+      "mcp__staruml-wireframe__wireframe_create_widget"
+    ]
+  }
+}
