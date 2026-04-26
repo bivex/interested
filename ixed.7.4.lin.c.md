@@ -1,6 +1,7 @@
 SourceGuardian loader для PHP 7.4 (Linux)                                              
+SourceGuardian Loader 15.0.2
 
- Архитектура защиты                                                                      
+Архитектура защиты                                                                      
                                                                                                                                  
   1. Шифрование — Blowfish                                                                                                       
    
